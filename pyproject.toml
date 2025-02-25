@@ -1,5 +1,5 @@
 [project]
-name = "agent-analysis"
+name = "analysis"
 version = "0.1.0"
 description = ""
 authors = [
@@ -10,9 +10,11 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "pydantic (>=2.10.6,<3.0.0)",
-    "datasets (>=3.3.2,<4.0.0)"
+    "datasets (>=3.3.2,<4.0.0)",
+    "altair (>=5.5.0,<6.0.0)",
+    "pandas (>=2.2.3,<3.0.0)",
 ]
-
+packages = [{include = "analysis"}]
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
