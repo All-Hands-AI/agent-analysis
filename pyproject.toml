@@ -1,0 +1,19 @@
+[project]
+name = "agent-analysis"
+version = "0.1.0"
+description = ""
+authors = [
+    {name = "Calvin Smith",email = "calvin@all-hands.dev"}
+]
+license = {text = "MIT"}
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "pydantic (>=2.10.6,<3.0.0)",
+    "datasets (>=3.3.2,<4.0.0)"
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
