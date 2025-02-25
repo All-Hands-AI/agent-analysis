@@ -9,6 +9,8 @@ license = {text = "MIT"}
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "pydantic (>=2.10.6,<3.0.0)",
+    "datasets (>=3.3.2,<4.0.0)"
 ]
 
 
