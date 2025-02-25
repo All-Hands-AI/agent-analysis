@@ -1,5 +1,28 @@
 """
 Models for representing SWE-bench evaluation results.
+
+## Examples
+
+To load the SWE-bench datasets:
+
+```python
+from analysis.models.swe_bench import Dataset, Split
+
+instances = Dataset.from_split(Split.VERIFIED).instances
+```
+
+To select the entire benchmark, use `Split.TEST`. To help with scripting use `Split.from_str(...)` for parsing command-line arguments.
+
+To find leaderboard entries, which we structure as `Evaluation` models:
+
+```python
+from analysis.models.swe_bench import Evaluation, Split
+
+split = Split.VERIFIED
+evaluations = [Evaluation.from_github(split=split, entry=entry) for entry in split.get_all_entries()]
+```
+
+Not all entries are well-formatted, so if you run into `ValidationError` issues wrap each `Evaluation.from_github(...)` call in a try-catch block.
 """
 
 from __future__ import annotations
