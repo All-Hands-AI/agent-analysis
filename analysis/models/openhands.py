@@ -1,3 +1,7 @@
+"""
+Models representing the data structures produced by OpenHands during the evaluation pipeline.
+"""
+
 from __future__ import annotations
 
 import os
@@ -138,7 +142,11 @@ class Evaluation(BaseModel):
         instance_callback: Callable[[EvaluationOutput, SWEBenchResult], dict[str, Any]],
     ) -> pd.DataFrame:
         """
-        ...
+        Convert an evaluation to a pandas DataFrame.
+
+        Requires a function that takes the evaluation output and test results and produces a
+        dictionary of values. Each instance becomes a row in the resulting dataframe containing
+        those values.
         """
         rows = []
         for instance_id in self.instance_ids():
@@ -168,7 +176,15 @@ class Evaluation(BaseModel):
         post_callback: Callable[[pd.DataFrame], pd.DataFrame] | None = None,
     ) -> pd.DataFrame:
         """
-        ...
+        Convert an evaluation to a pandas DataFrame.
+
+        Requires a function that takes the evaluation output and test results and produces a
+        sequence of dictionaries of values. This is useful for producing information per-step,
+        as each item in the sequence will become a row in the resulting dataframe.
+
+        Also supports an optional post-processing callback that takes the resulting dataframe
+        and returns a modified version of it. You can use this to perform instance-specific
+        transformations on the data.
         """
         tables = []
         for instance_id in self.instance_ids():
