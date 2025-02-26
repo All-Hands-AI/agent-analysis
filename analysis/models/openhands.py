@@ -148,6 +148,9 @@ class Evaluation(BaseModel):
             except KeyError:
                 continue
 
+            if not output.history:
+                continue
+
             row = {
                 "experiment": self.experiment(),
                 "instance_id": instance_id,
@@ -159,22 +162,28 @@ class Evaluation(BaseModel):
 
     def multi_to_dataframe(
         self,
-        callback: Callable[
+        instance_callback: Callable[
             [EvaluationOutput, SWEBenchResult], Iterable[dict[str, Any]]
         ],
+        post_callback: Callable[[pd.DataFrame], pd.DataFrame] | None = None,
     ) -> pd.DataFrame:
         """
         ...
         """
-        rows = []
+        tables = []
         for instance_id in self.instance_ids():
             try:
                 output = self.get_output(instance_id)
                 result = self.get_result(instance_id)
+
             except KeyError:
                 continue
 
-            for data in callback(output, result):
+            if not output.history:
+                continue
+
+            rows = []
+            for data in instance_callback(output, result):
                 row = {
                     "experiment": self.experiment(),
                     "instance_id": instance_id,
@@ -182,4 +191,12 @@ class Evaluation(BaseModel):
                 }
                 rows.append(row)
 
-        return pd.DataFrame(rows)
+            table = pd.DataFrame(rows)
+            if post_callback is not None:
+                updated_table = post_callback(table)
+                tables.append(updated_table)
+
+            else:
+                tables.append(table)
+
+        return pd.concat(tables)
