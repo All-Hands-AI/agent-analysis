@@ -43,5 +43,5 @@ __all__ = [
     "ErrorMetrics",
     "InstanceMetrics",
     "PatchMetrics",
-    "TypeMetrics"
+    "TypeMetrics",
 ]
