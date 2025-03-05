@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import requests
+from enum import Enum
 from typing import Any
 
 import unidiff
@@ -11,25 +12,40 @@ from analysis.models.swe_bench import Instance
 from analysis.utility import fs_cache
 
 
+class ScopeKind(str, Enum):
+    FILE = "file"
+    FUNCTION = "function"
+    CLASS = "class"
+
+
+class Scope(BaseModel):
+    kind: ScopeKind
+    name: str
+
+    def __hash__(self):
+        return hash((self.kind, self.name))
+
+    def __eq__(self, other: Any):
+        if not isinstance(other, Scope):
+            return False
+
+        return self.kind == other.kind and self.name == other.name
+
+
 class Location(BaseModel):
     """Represents a location in a source file."""
 
-    file: str
-    scopes: list[str]
+    scopes: list[Scope]
     line: int
 
     def __hash__(self) -> int:
-        return hash((self.file, tuple(self.scopes), self.line))
+        return hash((tuple(self.scopes), self.line))
 
     def __eq__(self, other: Any):
         if not isinstance(other, Location):
             return False
 
-        return (
-            self.file == other.file
-            and self.scopes == other.scopes
-            and self.line == other.line
-        )
+        return self.scopes == other.scopes and self.line == other.line
 
 
 class Diff(BaseModel):
@@ -47,7 +63,7 @@ class Patch(BaseModel):
 
     def locations(self) -> list[Location]:
         """Find the locations in the source files that were changed by the patch."""
-        
+
         locations: list[Location] = []
 
         for path, diff in self.files.items():
@@ -162,13 +178,12 @@ def _find_changed_locations(
 
 class ScopeTracker(ast.NodeVisitor):
     def __init__(self, filename: str, changed_lines: set[int]):
-        self.filename = filename
         self.changed_lines = changed_lines
-        self.current_scopes: list[str] = []
+        self.current_scopes: list[Scope] = [Scope(kind=ScopeKind.FILE, name=filename)]
         self.locations: list[Location] = []
 
     def visit_ClassDef(self, node: ast.ClassDef):
-        self.current_scopes.append(node.name)
+        self.current_scopes.append(Scope(kind=ScopeKind.CLASS, name=node.name))
         self._check_node(node)
         # Visit all child nodes
         for child in ast.iter_child_nodes(node):
@@ -176,7 +191,7 @@ class ScopeTracker(ast.NodeVisitor):
         self.current_scopes.pop()
 
     def visit_FunctionDef(self, node: ast.FunctionDef):
-        self.current_scopes.append(node.name)
+        self.current_scopes.append(Scope(kind=ScopeKind.FUNCTION, name=node.name))
         self._check_node(node)
         # Visit all child nodes
         for child in ast.iter_child_nodes(node):
@@ -184,7 +199,7 @@ class ScopeTracker(ast.NodeVisitor):
         self.current_scopes.pop()
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef):
-        self.current_scopes.append(node.name)
+        self.current_scopes.append(Scope(kind=ScopeKind.FUNCTION, name=node.name))
         self._check_node(node)
         # Visit all child nodes
         for child in ast.iter_child_nodes(node):
@@ -193,15 +208,16 @@ class ScopeTracker(ast.NodeVisitor):
 
     def _check_node(self, node: ast.AST):
         """Check if this specific node (not its children) has any lines that were changed."""
-        if hasattr(node, 'lineno'):
+        if hasattr(node, "lineno"):
             line_no = node.lineno
             # For this test case, we're only interested in the exact line that changed
             if line_no in self.changed_lines:
-                self.locations.append(Location(
-                    file=self.filename,
-                    scopes=self.current_scopes.copy(),
-                    line=line_no
-                ))
+                self.locations.append(
+                    Location(
+                        scopes=self.current_scopes.copy(),
+                        line=line_no,
+                    )
+                )
 
     def generic_visit(self, node: ast.AST):
         """Called for all nodes for which no specific visit method exists."""

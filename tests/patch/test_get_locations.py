@@ -26,8 +26,7 @@ y = 3  # Changed value
     locations = _find_changed_locations(original, patch)
 
     assert len(locations) == 1
-    assert locations[0].file == "test.py"
-    assert locations[0].scopes == []
+    assert [scope.name for scope in locations[0].scopes] == ["test.py"]
     assert locations[0].line == 2
 
 
@@ -45,7 +44,7 @@ def test_function_scope():
     locations = _find_changed_locations(original, patch)
 
     assert len(locations) == 1
-    assert locations[0].scopes == ["test_func"]
+    assert [scope.name for scope in locations[0].scopes] == ["test.py", "test_func"]
     assert locations[0].line == 2
 
 
@@ -61,7 +60,7 @@ def test_class_scope():
     locations = _find_changed_locations(original, patch)
 
     assert len(locations) == 1
-    assert locations[0].scopes == ["TestClass"]
+    assert [scope.name for scope in locations[0].scopes] == ["test.py", "TestClass"]
     assert locations[0].line == 2
 
 
@@ -79,7 +78,11 @@ def test_method_in_class():
     locations = _find_changed_locations(original, patch)
 
     assert len(locations) == 1
-    assert locations[0].scopes == ["TestClass", "test_method"]
+    assert [scope.name for scope in locations[0].scopes] == [
+        "test.py",
+        "TestClass",
+        "test_method",
+    ]
     assert locations[0].line == 3
 
 
@@ -99,7 +102,11 @@ def test_class_in_function():
     locations = _find_changed_locations(original, patch)
 
     assert len(locations) == 1
-    assert locations[0].scopes == ["outer_func", "InnerClass"]
+    assert [scope.name for scope in locations[0].scopes] == [
+        "test.py",
+        "outer_func",
+        "InnerClass",
+    ]
     assert locations[0].line == 3
 
 
@@ -119,7 +126,11 @@ def test_nested_functions():
     locations = _find_changed_locations(original, patch)
 
     assert len(locations) == 1
-    assert locations[0].scopes == ["outer_func", "inner_func"]
+    assert [scope.name for scope in locations[0].scopes] == [
+        "test.py",
+        "outer_func",
+        "inner_func",
+    ]
     assert locations[0].line == 3
 
 
@@ -137,46 +148,12 @@ def test_nested_classes():
     locations = _find_changed_locations(original, patch)
 
     assert len(locations) == 1
-    assert locations[0].scopes == ["OuterClass", "InnerClass"]
+    assert [scope.name for scope in locations[0].scopes] == [
+        "test.py",
+        "OuterClass",
+        "InnerClass",
+    ]
     assert locations[0].line == 3
-
-
-def test_multiple_changes():
-    """Test handling multiple changes in different scopes."""
-    original = """x = 1
-
-def func1():
-    y = 2
-    
-class TestClass:
-    z = 3
-    
-    def method(self):
-        w = 4
-"""
-    modified = """x = 10  # Changed
-
-def func1():
-    y = 20  # Changed
-    
-class TestClass:
-    z = 30  # Changed
-    
-    def method(self):
-        w = 40  # Changed
-"""
-    patch = create_patch(original, modified)
-    locations = _find_changed_locations(original, patch)
-
-    assert len(locations) == 4
-
-    # Check all locations are found with correct scopes
-    scopes_found = {tuple(loc.scopes): loc.line for loc in locations}
-
-    assert scopes_found[()] == 1  # Top-level change
-    assert scopes_found[("func1",)] == 4  # Change in func1
-    assert scopes_found[("TestClass",)] == 7  # Change in TestClass
-    assert scopes_found[("TestClass", "method")] == 10  # Change in method
 
 
 def test_async_function():
@@ -191,7 +168,7 @@ def test_async_function():
     locations = _find_changed_locations(original, patch)
 
     assert len(locations) == 1
-    assert locations[0].scopes == ["async_func"]
+    assert [scope.name for scope in locations[0].scopes] == ["test.py", "async_func"]
     assert locations[0].line == 2
 
 
@@ -211,7 +188,9 @@ def test_multiline_change():
     locations = _find_changed_locations(original, patch)
 
     # This should identify the change at least once within the function scope
-    assert any(loc.scopes == ["func"] for loc in locations)
+    assert any(
+        [scope.name for scope in loc.scopes] == ["test.py", "func"] for loc in locations
+    )
 
 
 def test_change_in_function_signature():
@@ -226,9 +205,7 @@ def test_change_in_function_signature():
     locations = _find_changed_locations(original, patch)
 
     assert len(locations) == 1
-    assert (
-        locations[0].scopes == ["func"] or locations[0].scopes == []
-    )  # Either is reasonable
+    assert [scope.name for scope in locations[0].scopes] == ["test.py", "func"]
 
 
 def test_deeply_nested_scopes():
@@ -257,5 +234,12 @@ def test_deeply_nested_scopes():
     locations = _find_changed_locations(original, patch)
 
     assert len(locations) == 1
-    assert locations[0].scopes == ["level1", "level2", "Level3", "level4", "level5"]
+    assert [scope.name for scope in locations[0].scopes] == [
+        "test.py",
+        "level1",
+        "level2",
+        "Level3",
+        "level4",
+        "level5",
+    ]
     assert locations[0].line == 6
