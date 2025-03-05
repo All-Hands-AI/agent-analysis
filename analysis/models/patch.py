@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from analysis.models.swe_bench import Instance
 from analysis.utility import fs_cache
 
+
 class Location(BaseModel):
     """Represents a location in a source file."""
 
@@ -19,13 +20,17 @@ class Location(BaseModel):
 
     def __hash__(self) -> int:
         return hash((self.file, tuple(self.scopes), self.line))
-    
-    def __eq__(self, other):
+
+    def __eq__(self, other: Any):
         if not isinstance(other, Location):
             return False
-        return (self.file == other.file and 
-                self.scopes == other.scopes and 
-                self.line == other.line)
+
+        return (
+            self.file == other.file
+            and self.scopes == other.scopes
+            and self.line == other.line
+        )
+
 
 class Diff(BaseModel):
     """Represents a diff between two versions of a file."""
@@ -113,7 +118,10 @@ def _get_source_from_github(repo: str, commit: str, path: str) -> str:
     response.raise_for_status()
     return response.text
 
-def _find_changed_locations(source: str, file_patch: unidiff.PatchedFile) -> list[Location]:
+
+def _find_changed_locations(
+    source: str, file_patch: unidiff.PatchedFile
+) -> list[Location]:
     """Find the locations in a source file that were changed by a patch.
 
     Args:
@@ -125,20 +133,21 @@ def _find_changed_locations(source: str, file_patch: unidiff.PatchedFile) -> lis
     """
     # Parse the source code into an AST
     tree = ast.parse(source)
-    
+
     # Get all changed line numbers from the patch
     changed_lines = set()
     for hunk in file_patch:
         for line in hunk:
             if line.is_added or line.is_removed:
                 changed_lines.add(line.target_line_no)
-    
+
     # Walk the AST and track scopes
     tracker = ScopeTracker(file_patch.path, changed_lines)
     tracker.visit(tree)
-    
+
     # Return all unique locations
     return list(set(tracker.locations))
+
 
 class ScopeTracker(ast.NodeVisitor):
     def __init__(self, filename: str, changed_lines: set[int]):
@@ -146,7 +155,7 @@ class ScopeTracker(ast.NodeVisitor):
         self.changed_lines = changed_lines
         self.current_scopes: list[str] = []
         self.locations: list[Location] = []
-        
+
     def visit_ClassDef(self, node: ast.ClassDef):
         self.current_scopes.append(node.name)
         self._check_node(node)
@@ -154,7 +163,7 @@ class ScopeTracker(ast.NodeVisitor):
         for child in ast.iter_child_nodes(node):
             self.visit(child)
         self.current_scopes.pop()
-    
+
     def visit_FunctionDef(self, node: ast.FunctionDef):
         self.current_scopes.append(node.name)
         self._check_node(node)
@@ -162,7 +171,7 @@ class ScopeTracker(ast.NodeVisitor):
         for child in ast.iter_child_nodes(node):
             self.visit(child)
         self.current_scopes.pop()
-    
+
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef):
         self.current_scopes.append(node.name)
         self._check_node(node)
@@ -170,23 +179,25 @@ class ScopeTracker(ast.NodeVisitor):
         for child in ast.iter_child_nodes(node):
             self.visit(child)
         self.current_scopes.pop()
-        
+
     def _check_node(self, node: ast.AST):
         """Check if the node has any lines that were changed."""
-        if hasattr(node, 'lineno'):
+        if hasattr(node, "lineno"):
             line_no = node.lineno
-            end_line_no = getattr(node, 'end_lineno', line_no)
-            
+            end_line_no = getattr(node, "end_lineno", line_no)
+
             # Check if any line in this node's range was changed
             for line in range(line_no, end_line_no + 1):
                 if line in self.changed_lines:
-                    self.locations.append(Location(
-                        file=self.filename,
-                        scopes=self.current_scopes.copy(),
-                        line=line
-                    ))
+                    self.locations.append(
+                        Location(
+                            file=self.filename,
+                            scopes=self.current_scopes.copy(),
+                            line=line,
+                        )
+                    )
                     break
-    
+
     def generic_visit(self, node: ast.AST):
         """Called for all nodes for which no specific visit method exists."""
         self._check_node(node)
