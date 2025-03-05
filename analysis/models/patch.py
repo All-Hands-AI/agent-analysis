@@ -45,6 +45,17 @@ class Patch(BaseModel):
     patch: str
     files: dict[str, Diff]
 
+    def locations(self) -> list[Location]:
+        """Find the locations in the source files that were changed by the patch."""
+        
+        locations: list[Location] = []
+
+        for path, diff in self.files.items():
+            file_patch = unidiff.PatchSet.from_string(self.patch)[path]
+            locations.extend(_find_changed_locations(diff.before, file_patch))
+
+        return locations
+
     @staticmethod
     def from_github(repo: str, base_commit: str, patch: str) -> Patch:
         """Create a Patch object from a GitHub patch.
