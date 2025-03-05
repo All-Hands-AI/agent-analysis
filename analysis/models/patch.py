@@ -5,6 +5,8 @@ import requests
 from analysis.models.swe_bench import Instance
 import unidiff
 
+from analysis.utility import fs_cache
+
 
 class Diff(BaseModel):
     """Represents a diff between two versions of a file."""
@@ -20,81 +22,50 @@ class Patch(BaseModel):
     files: dict[str, Diff]
 
     @staticmethod
-    def from_str(patch: str) -> Patch:
-        """Parse a git patch into a Patch object.
-        
-        This doesn't work particularly well for small or disjoint patches, since each diff is missing lots of context.
-        """
-        files = {}
-        current_file = None
-        current_before = []
-        current_after = []
+    def from_github(repo: str, base_commit: str, patch: str) -> Patch:
+        """Create a Patch object from a GitHub patch.
 
-        try:
-            lines = patch.split("\n")
-            for line in lines:
-                if line.startswith("diff --git"):
-                    # Save previous file if exists
-                    if current_file:
-                        files[current_file] = Diff(
-                            before="\n".join(current_before),
-                            after="\n".join(current_after),
-                        )
-                    # Start new file
-                    current_file = line.split()[-1].lstrip("b/")
-                    current_before = []
-                    current_after = []
-                elif line.startswith("+++") or line.startswith("---"):
-                    continue
-                elif line.startswith("+"):
-                    current_after.append(line[1:])
-                elif line.startswith("-"):
-                    current_before.append(line[1:])
-                elif line.startswith(" "):
-                    current_before.append(line[1:])
-                    current_after.append(line[1:])
+        Requires downloading the source code of the base commit from GitHub.
 
-            # Save last file
-            if current_file:
-                files[current_file] = Diff(
-                    before="\n".join(current_before), after="\n".join(current_after)
-                )
-        except Exception:
-            pass
-
-        return Patch(files=files)
-
-    @staticmethod
-    def from_instance(instance: Instance) -> Patch:
-        """Parse a Patch from an Instance.
-        
-        Requires downloading the original file from GitHub.
+        Args:
+            repo: GitHub repository in the format 'owner/repo'.
+            base_commit: Base commit hash.
+            patch: Patch in unified diff format.
         """
         files: dict[str, Diff] = {}
 
-        for patch in unidiff.PatchSet.from_string(instance.patch):
-            path = patch.path
-            url = f"https://raw.githubusercontent.com/{instance.repo}/{instance.base_commit}/{path}"
-            response = requests.get(url)
-            response.raise_for_status()
-            
-            lines = response.text.splitlines(keepends=True)
+        for file_patch in unidiff.PatchSet.from_string(patch):
+            source = _get_source_from_github(repo, base_commit, file_patch.path)
+            files[file_patch.path] = Diff(
+                before=source, after="".join(_apply_diff(source, file_patch))
+            )
 
-            for hunk in patch:
-                # Calculate hunk position
-                start = hunk.target_start - 1
+        return Patch(patch=patch, files=files)
 
-                # Remove lines
-                del lines[start : start + hunk.target_length]
+    @staticmethod
+    def from_instance(instance: Instance) -> Patch:
+        """Create a Patch object from a SWE-Bench instance."""
+        return Patch.from_github(instance.repo, instance.base_commit, instance.patch)
 
-                # Insert new lines
-                lines[start:start] = [
-                    line[1:]
-                    for line in hunk.target_lines()
-                    if line.value.startswith("+")
-                ]
 
-            files[path] = Diff(before=response.text, after="".join(lines))
+def _apply_diff(source: str, file_patch: unidiff.PatchedFile) -> str:
+    """Apply a diff to a source file."""
+    lines = source.splitlines(keepends=True)
 
-        return Patch(patch=instance.patch, files=files)
+    for hunk in file_patch:
+        start = hunk.target_start - 1
+        del lines[start : start + hunk.target_length]
+        lines[start:start] = [
+            line[1:] for line in hunk.target_lines() if line.value.startswith("+")
+        ]
 
+    return "".join(lines)
+
+
+@fs_cache
+def _get_source_from_github(repo: str, commit: str, path: str) -> str:
+    """Get the source code of a file from GitHub."""
+    url = f"https://raw.githubusercontent.com/{repo}/{commit}/{path}"
+    response = requests.get(url)
+    response.raise_for_status()
+    return response.text
