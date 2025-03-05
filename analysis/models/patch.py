@@ -1,11 +1,13 @@
 from __future__ import annotations
+
 import ast
-
-from pydantic import BaseModel
 import requests
-from analysis.models.swe_bench import Instance
-import unidiff
+from typing import Any
 
+import unidiff
+from pydantic import BaseModel
+
+from analysis.models.swe_bench import Instance
 from analysis.utility import fs_cache
 
 class Location(BaseModel):
@@ -14,6 +16,16 @@ class Location(BaseModel):
     file: str
     scopes: list[str]
     line: int
+
+    def __hash__(self) -> int:
+        return hash((self.file, tuple(self.scopes), self.line))
+    
+    def __eq__(self, other):
+        if not isinstance(other, Location):
+            return False
+        return (self.file == other.file and 
+                self.scopes == other.scopes and 
+                self.line == other.line)
 
 class Diff(BaseModel):
     """Represents a diff between two versions of a file."""
@@ -125,7 +137,8 @@ def _find_changed_locations(source: str, file_patch: unidiff.PatchedFile) -> lis
     tracker = ScopeTracker(file_patch.path, changed_lines)
     tracker.visit(tree)
     
-    return tracker.locations
+    # Return all unique locations
+    return list(set(tracker.locations))
 
 class ScopeTracker(ast.NodeVisitor):
     def __init__(self, filename: str, changed_lines: set[int]):
