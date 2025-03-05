@@ -36,9 +36,8 @@ class Patch(BaseModel):
 
         for file_patch in unidiff.PatchSet.from_string(patch):
             source = _get_source_from_github(repo, base_commit, file_patch.path)
-            files[file_patch.path] = Diff(
-                before=source, after="".join(_apply_diff(source, file_patch))
-            )
+            updated_source = _apply_file_patch(source, file_patch)
+            files[file_patch.path] = Diff(before=source, after=updated_source)
 
         return Patch(patch=patch, files=files)
 
@@ -48,18 +47,43 @@ class Patch(BaseModel):
         return Patch.from_github(instance.repo, instance.base_commit, instance.patch)
 
 
-def _apply_diff(source: str, file_patch: unidiff.PatchedFile) -> str:
-    """Apply a diff to a source file."""
-    lines = source.splitlines(keepends=True)
+def _apply_file_patch(source: str, file_patch: unidiff.PatchedFile) -> str:
+    """Apply a file patch to a source file.
 
-    for hunk in file_patch:
-        start = hunk.target_start - 1
-        del lines[start : start + hunk.target_length]
-        lines[start:start] = [
-            line[1:] for line in hunk.target_lines() if line.value.startswith("+")
-        ]
+    Args:
+        source: The original source code.
+        file_patch: The patch to apply.
 
-    return "".join(lines)
+    Returns:
+        The patched source code.
+    """
+    # Split the source into lines, preserving the line endings
+    original_lines = source.splitlines(keepends=True)
+
+    # Track how line positions shift as we apply hunks
+    line_shift = 0
+
+    # Sort hunks by source_start to apply them in order
+    hunks = sorted(file_patch, key=lambda hunk: hunk.source_start)
+
+    for hunk in hunks:
+        # Adjust position based on previous shifts
+        source_pos = hunk.source_start - 1 + line_shift
+        source_end = source_pos + hunk.source_length
+
+        # Get the new lines to add (both context and added lines)
+        # We only exclude removed lines (lines that start with -)
+        new_lines = [line.value for line in hunk.target_lines() if not line.is_removed]
+
+        # Calculate the shift caused by this hunk
+        hunk_shift = len(new_lines) - hunk.source_length
+        line_shift += hunk_shift
+
+        # Replace the old lines with the new ones
+        original_lines[source_pos:source_end] = new_lines
+
+    # Just concatenate the lines (they already include newlines)
+    return "".join(original_lines)
 
 
 @fs_cache
