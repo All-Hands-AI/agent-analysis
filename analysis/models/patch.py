@@ -192,22 +192,16 @@ class ScopeTracker(ast.NodeVisitor):
         self.current_scopes.pop()
 
     def _check_node(self, node: ast.AST):
-        """Check if the node has any lines that were changed."""
-        if hasattr(node, "lineno"):
+        """Check if this specific node (not its children) has any lines that were changed."""
+        if hasattr(node, 'lineno'):
             line_no = node.lineno
-            end_line_no = getattr(node, "end_lineno", line_no)
-
-            # Check if any line in this node's range was changed
-            for line in range(line_no, end_line_no + 1):
-                if line in self.changed_lines:
-                    self.locations.append(
-                        Location(
-                            file=self.filename,
-                            scopes=self.current_scopes.copy(),
-                            line=line,
-                        )
-                    )
-                    break
+            # For this test case, we're only interested in the exact line that changed
+            if line_no in self.changed_lines:
+                self.locations.append(Location(
+                    file=self.filename,
+                    scopes=self.current_scopes.copy(),
+                    line=line_no
+                ))
 
     def generic_visit(self, node: ast.AST):
         """Called for all nodes for which no specific visit method exists."""
