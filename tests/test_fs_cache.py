@@ -1,9 +1,8 @@
 import pytest
 from unittest.mock import patch, MagicMock, call
 
-# Import the fs_cache implementation
-# Assuming the fs_cache is in a module called cache_utils.py
 from analysis.utility import fs_cache
+
 
 # Test fixture to manage environment variables using pytest's monkeypatch
 @pytest.fixture
@@ -13,10 +12,17 @@ def clean_env(monkeypatch):
     monkeypatch.delenv('FS_CACHE_DISABLE', raising=False)
     return monkeypatch
 
-# Mock expensive function for testing
+# Create a proper mock function with a __name__ attribute
 @pytest.fixture
 def mock_expensive_func():
-    mock_func = MagicMock(return_value="expensive result")
+    def expensive_func(arg):
+        return f"expensive result for {arg}"
+    
+    # Create a mock with a side_effect to track calls
+    mock_func = MagicMock(side_effect=expensive_func)
+    # Make sure __name__ is properly set
+    mock_func.__name__ = "expensive_func"
+    
     return mock_func
 
 # Test class to verify behavior with methods
@@ -137,8 +143,11 @@ def test_custom_env_vars(clean_env, tmp_path, mock_expensive_func):
 
 def test_method_caching(clean_env, tmp_path):
     """Test that the decorator works properly for class methods."""
-    # Patch the fs_cache to use our temporary directory
-    with patch('cache_utils.fs_cache', fs_cache(cache_dir=str(tmp_path / "cache"))):
+    # Create a TestClass with a patched decorator that uses our temp directory
+    cache_dir = tmp_path / "cache"
+    
+    # Monkeypatch the decorator in the TestClass to use our temp directory
+    with patch('__main__.fs_cache', return_value=fs_cache(cache_dir=str(cache_dir))):
         # Create instance and call method twice
         instance = TestClass()
         result1 = instance.cached_method("arg")
@@ -167,7 +176,7 @@ def test_pickle_failure(clean_env, tmp_path):
     
     # Call function - should not raise an error
     with patch('builtins.print') as mock_print:
-        decorated_func()
+        _result = decorated_func()
     
     # Should print a warning
     mock_print.assert_called_once()
@@ -179,13 +188,15 @@ def test_cache_read_failure(clean_env, tmp_path):
     cache_dir = tmp_path / "cache"
     cache_dir.mkdir(exist_ok=True)
     
-    # Create a cached result file with invalid data
-    @fs_cache(cache_dir=str(cache_dir))
+    # Define a simple function with a proper name
     def simple_func():
         return "result"
     
+    # Create decorated function 
+    decorated_func = fs_cache(cache_dir=str(cache_dir))(simple_func)
+    
     # Call once to create cache
-    simple_func()
+    decorated_func()
     
     # Find the cache file
     cache_files = list(cache_dir.iterdir())
@@ -196,5 +207,5 @@ def test_cache_read_failure(clean_env, tmp_path):
         f.write("This is not valid pickle data")
     
     # Call function again - should regenerate result
-    result = simple_func()
+    result = decorated_func()
     assert result == "result"
