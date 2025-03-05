@@ -1,22 +1,13 @@
 import unidiff
-from io import StringIO
 
 from analysis.models.patch import _find_changed_locations
+from tests.patch.utility import git_diff
 
 def create_patch(original: str, modified: str, filename: str = "test.py") -> unidiff.PatchedFile:
     """Helper function to create a PatchedFile from original and modified code."""
-    patch_text = f"""--- {filename}
-+++ {filename}
-@@ -1,{len(original.splitlines())} +1,{len(modified.splitlines())} @@
-"""
-    
-    for i, line in enumerate(original.splitlines(), 1):
-        patch_text += f"-{line}\n"
-    
-    for i, line in enumerate(modified.splitlines(), 1):
-        patch_text += f"+{line}\n"
-    
-    patch_set = unidiff.PatchSet(StringIO(patch_text))
+
+    patch_text = git_diff(original, modified, filename=filename)
+    patch_set = unidiff.PatchSet(patch_text)
     return patch_set[0]
 
 def test_top_level_changes():
@@ -216,6 +207,8 @@ def test_no_changes():
 """
     # Create identical modified version (no changes)
     patch = create_patch(code, code)
+
+    print(patch)
     locations = _find_changed_locations(code, patch)
     
     assert len(locations) == 0
