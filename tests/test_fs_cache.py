@@ -143,44 +143,58 @@ def test_custom_env_vars(clean_env, tmp_path, mock_expensive_func):
 
 def test_method_caching(clean_env, tmp_path):
     """Test that the decorator works properly for class methods."""
-    # Create a TestClass with a patched decorator that uses our temp directory
+    # Create a cache directory within pytest's temporary directory
     cache_dir = tmp_path / "cache"
+    cache_dir.mkdir(exist_ok=True)
     
-    # Monkeypatch the decorator in the TestClass to use our temp directory
-    with patch('__main__.fs_cache', return_value=fs_cache(cache_dir=str(cache_dir))):
-        # Create instance and call method twice
-        instance = TestClass()
-        result1 = instance.cached_method("arg")
-        result2 = instance.cached_method("arg")
+    # Create a new class with the decorator specifically for this test
+    class TestCachingClass:
+        def __init__(self):
+            self.counter = 0
         
-        # Results should be the same (cached) even though counter incremented
-        assert result1 == result2
-        
-        # Counter should only be incremented once
-        assert instance.counter == 1
+        @fs_cache(cache_dir=str(cache_dir))
+        def cached_method(self, arg):
+            self.counter += 1
+            return f"result-{arg}-{self.counter}"
+    
+    # Create instance and call method twice
+    instance = TestCachingClass()
+    result1 = instance.cached_method("arg")
+    result2 = instance.cached_method("arg")
+    
+    # Results should be the same (cached) even though counter would increment
+    assert result1 == result2
+    
+    # Counter should only be incremented once
+    assert instance.counter == 1
 
 
 def test_pickle_failure(clean_env, tmp_path):
     """Test that the function handles pickle failures gracefully."""
     cache_dir = tmp_path / "cache"
+    cache_dir.mkdir(exist_ok=True)
     
-    # Create a function that returns an unpicklable object
+    class UnpicklableClass:
+        def __reduce__(self):
+            # Deliberately raise an exception during pickling
+            raise TypeError("Cannot pickle this object")
+    
     def unpicklable_func():
-        # Create an object with a cycle - this cannot be pickled
-        a = {}
-        a['self'] = a
-        return a
+        return UnpicklableClass()
     
     # Create decorated function
     decorated_func = fs_cache(cache_dir=str(cache_dir))(unpicklable_func)
     
     # Call function - should not raise an error
     with patch('builtins.print') as mock_print:
-        _result = decorated_func()
+        decorated_func()
+        # Call again to verify it doesn't break on second call
+        decorated_func()
     
-    # Should print a warning
-    mock_print.assert_called_once()
-    assert "Warning" in mock_print.call_args[0][0]
+    # Should print a warning at least once
+    mock_print.assert_called()
+    assert any("Warning" in call_args[0][0] for call_args in mock_print.call_args_list)
+
 
 
 def test_cache_read_failure(clean_env, tmp_path):

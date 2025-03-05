@@ -75,44 +75,25 @@ def fs_cache(
 
 def _generate_cache_key(func_name: str, args: tuple, kwargs: dict) -> str:
     """Generate a unique cache key based on function name and arguments."""
-    # Convert arguments to a JSON-serializable format
-    args_str = json.dumps(args, sort_keys=True, default=str)
-    kwargs_str = json.dumps(kwargs, sort_keys=True, default=str)
+    # Handle bound methods by extracting class and method names
+    if args and hasattr(args[0], '__class__') and hasattr(args[0].__class__, func_name):
+        # This is likely a method call - include class name in the key
+        class_name = args[0].__class__.__name__
+        # Skip the 'self' argument for methods
+        method_args = args[1:]
+        args_for_key = (class_name,) + method_args
+    else:
+        args_for_key = args
+    
+    try:
+        # Try to JSON serialize the arguments
+        args_str = json.dumps(args_for_key, sort_keys=True, default=str)
+        kwargs_str = json.dumps(kwargs, sort_keys=True, default=str)
+    except (TypeError, ValueError):
+        # If JSON serialization fails, use string representation
+        args_str = str(args_for_key)
+        kwargs_str = str(kwargs)
     
     # Create a hash of the function name and arguments
     key_data = f"{func_name}:{args_str}:{kwargs_str}".encode('utf-8')
     return hashlib.md5(key_data).hexdigest()
-
-# Example usage:
-"""
-import requests
-import time
-import os
-
-@fs_cache()
-def fetch_data(url: str) -> dict:
-    print(f"Fetching data from {url}...")
-    time.sleep(1)  # Simulate slow operation
-    response = requests.get(url)
-    return response.json()
-
-# Normal call (uses cache if available)
-data1 = fetch_data("https://api.example.com/data")
-
-# To invalidate cache (ignore existing cache but still save results):
-# os.environ['FS_CACHE_INVALIDATE'] = '1'
-# data2 = fetch_data("https://api.example.com/data")
-
-# To disable cache completely (don't read or write cache):
-# os.environ['FS_CACHE_DISABLE'] = '1'
-# data3 = fetch_data("https://api.example.com/data")
-
-# Use different environment variable names:
-@fs_cache(
-    env_invalidate='MY_APP_INVALIDATE_CACHE',
-    env_disable='MY_APP_DISABLE_CACHE'
-)
-def custom_fetch():
-    # This will respond to different environment variables
-    pass
-"""
