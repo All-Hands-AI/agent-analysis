@@ -108,12 +108,12 @@ class Patch(BaseModel):
         if not hasattr(self, "_locations"):
             locations: list[Location] = []
 
-            for path, diff in self.diffs.items():
-                for file_patch in unidiff.PatchSet.from_string(self.patch):
-                    if file_patch.path == path:
-                        locations.extend(
-                            _find_changed_locations(diff.before, file_patch)
-                        )
+            for filename, changed_lines in _parse_git_diff(self.patch).items():
+                locations.extend(
+                    _find_changed_locations(
+                        self.source[filename], filename, changed_lines
+                    )
+                )
 
             setattr(self, "_locations", locations)
 
@@ -190,14 +190,13 @@ def _get_source_from_github(repo: str, commit: str, path: str) -> str:
     return response.text
 
 
-def _find_changed_locations(
-    source: str, file_patch: unidiff.PatchedFile
-) -> list[Location]:
-    """Find the locations in a source file that were changed by a patch.
+def _find_changed_locations(source: str, filename: str, changed_lines: set[int]) -> list[Location]:
+    """Find the locations in a source file that were changed by a set of lines.
 
     Args:
         source: The original source code.
-        file_patch: The patch to apply.
+        filename: The name of the file being analyzed.
+        changed_lines: A set of line numbers that were changed in the file.
 
     Returns:
         A list of Location objects representing the changes.
@@ -205,20 +204,12 @@ def _find_changed_locations(
     # Parse the source code into an AST
     tree = ast.parse(source)
 
-    # Get all changed line numbers from the patch
-    changed_lines = set()
-    for hunk in file_patch:
-        for line in hunk:
-            if line.is_added or line.is_removed:
-                changed_lines.add(line.target_line_no)
-
     # Walk the AST and track scopes
-    tracker = ScopeTracker(file_patch.path, changed_lines)
+    tracker = ScopeTracker(filename, changed_lines)
     tracker.visit(tree)
 
     # Return all unique locations
     return list(set(tracker.locations))
-
 
 class ScopeTracker(ast.NodeVisitor):
     """Utility class to track scopes in an AST."""

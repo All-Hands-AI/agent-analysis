@@ -1,6 +1,6 @@
 import unidiff
 
-from analysis.models.patch import _find_changed_locations
+from analysis.models.patch import _find_changed_locations, _parse_git_diff
 from tests.patch.utility import git_diff
 
 
@@ -22,8 +22,9 @@ y = 2
     modified = """x = 1
 y = 3  # Changed value
 """
-    patch = create_patch(original, modified)
-    locations = _find_changed_locations(original, patch)
+    patch = git_diff(original, modified, filename="test.py")
+    changed_lines = _parse_git_diff(patch)
+    locations = _find_changed_locations(original, "test.py", changed_lines["test.py"])
 
     assert len(locations) == 1
     assert [scope.name for scope in locations[0].scopes] == ["test.py"]
@@ -40,8 +41,9 @@ def test_function_scope():
     x = 2  # Changed value
     return x
 """
-    patch = create_patch(original, modified)
-    locations = _find_changed_locations(original, patch)
+    patch = git_diff(original, modified, filename="test.py")
+    changed_lines = _parse_git_diff(patch)
+    locations = _find_changed_locations(original, "test.py", changed_lines["test.py"])
 
     assert len(locations) == 1
     assert [scope.name for scope in locations[0].scopes] == ["test.py", "test_func"]
@@ -56,8 +58,9 @@ def test_class_scope():
     modified = """class TestClass:
     x = 2  # Changed value
 """
-    patch = create_patch(original, modified)
-    locations = _find_changed_locations(original, patch)
+    patch = git_diff(original, modified, filename="test.py")
+    changed_lines = _parse_git_diff(patch)
+    locations = _find_changed_locations(original, "test.py", changed_lines["test.py"])
 
     assert len(locations) == 1
     assert [scope.name for scope in locations[0].scopes] == ["test.py", "TestClass"]
@@ -74,8 +77,9 @@ def test_method_in_class():
     def test_method(self):
         return 2  # Changed value
 """
-    patch = create_patch(original, modified)
-    locations = _find_changed_locations(original, patch)
+    patch = git_diff(original, modified, filename="test.py")
+    changed_lines = _parse_git_diff(patch)
+    locations = _find_changed_locations(original, "test.py", changed_lines["test.py"])
 
     assert len(locations) == 1
     assert [scope.name for scope in locations[0].scopes] == [
@@ -98,8 +102,9 @@ def test_class_in_function():
         x = 2  # Changed value
     return InnerClass()
 """
-    patch = create_patch(original, modified)
-    locations = _find_changed_locations(original, patch)
+    patch = git_diff(original, modified, filename="test.py")
+    changed_lines = _parse_git_diff(patch)
+    locations = _find_changed_locations(original, "test.py", changed_lines["test.py"])
 
     assert len(locations) == 1
     assert [scope.name for scope in locations[0].scopes] == [
@@ -122,8 +127,9 @@ def test_nested_functions():
         return 2  # Changed value
     return inner_func()
 """
-    patch = create_patch(original, modified)
-    locations = _find_changed_locations(original, patch)
+    patch = git_diff(original, modified, filename="test.py")
+    changed_lines = _parse_git_diff(patch)
+    locations = _find_changed_locations(original, "test.py", changed_lines["test.py"])
 
     assert len(locations) == 1
     assert [scope.name for scope in locations[0].scopes] == [
@@ -144,8 +150,9 @@ def test_nested_classes():
     class InnerClass:
         x = 2  # Changed value
 """
-    patch = create_patch(original, modified)
-    locations = _find_changed_locations(original, patch)
+    patch = git_diff(original, modified, filename="test.py")
+    changed_lines = _parse_git_diff(patch)
+    locations = _find_changed_locations(original, "test.py", changed_lines["test.py"])
 
     assert len(locations) == 1
     assert [scope.name for scope in locations[0].scopes] == [
@@ -164,8 +171,9 @@ def test_async_function():
     modified = """async def async_func():
     return 2  # Changed value
 """
-    patch = create_patch(original, modified)
-    locations = _find_changed_locations(original, patch)
+    patch = git_diff(original, modified, filename="test.py")
+    changed_lines = _parse_git_diff(patch)
+    locations = _find_changed_locations(original, "test.py", changed_lines["test.py"])
 
     assert len(locations) == 1
     assert [scope.name for scope in locations[0].scopes] == ["test.py", "async_func"]
@@ -184,8 +192,9 @@ def test_multiline_change():
          20 +  # Changed
          30)   # Changed
 """
-    patch = create_patch(original, modified)
-    locations = _find_changed_locations(original, patch)
+    patch = git_diff(original, modified, filename="test.py")
+    changed_lines = _parse_git_diff(patch)
+    locations = _find_changed_locations(original, "test.py", changed_lines["test.py"])
 
     # This should identify the change at least once within the function scope
     assert any(
@@ -201,8 +210,9 @@ def test_change_in_function_signature():
     modified = """def func(a, b, c=0):  # Added parameter
     return a + b
 """
-    patch = create_patch(original, modified)
-    locations = _find_changed_locations(original, patch)
+    patch = git_diff(original, modified, filename="test.py")
+    changed_lines = _parse_git_diff(patch)
+    locations = _find_changed_locations(original, "test.py", changed_lines["test.py"])
 
     assert len(locations) == 1
     assert [scope.name for scope in locations[0].scopes] == ["test.py", "func"]
@@ -230,8 +240,9 @@ def test_deeply_nested_scopes():
         return Level3()
     return level2()
 """
-    patch = create_patch(original, modified)
-    locations = _find_changed_locations(original, patch)
+    patch = git_diff(original, modified, filename="test.py")
+    changed_lines = _parse_git_diff(patch)
+    locations = _find_changed_locations(original, "test.py", changed_lines["test.py"])
 
     assert len(locations) == 1
     assert [scope.name for scope in locations[0].scopes] == [
