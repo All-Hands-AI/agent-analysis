@@ -14,7 +14,7 @@ from analysis.utility import fs_cache
 
 class ScopeKind(str, Enum):
     """Denotes the kind of scope boundary."""
-    
+
     FILE = "file"
     FUNCTION = "function"
     CLASS = "class"
@@ -22,11 +22,11 @@ class ScopeKind(str, Enum):
 
 class Scope(BaseModel):
     """Scopes represent syntactic and semantic blocks of code.
-    
+
     We don't consider _all_ traditional scope boundaries, and instead stick with
     scopes that represent common abstractions that aren't control-flow.
     """
-    
+
     kind: ScopeKind
     """The kind of scope."""
 
@@ -51,7 +51,7 @@ class Location(BaseModel):
     A stack of scopes representing the conceptual location. Should always
     start with a `ScopeKind.FILE` scope.
     """
-    
+
     line: int
     """The line number in the source file."""
 
@@ -63,7 +63,7 @@ class Location(BaseModel):
             return False
 
         return self.scopes == other.scopes and self.line == other.line
-    
+
     def most_recent_scope(self, kind: ScopeKind) -> str | None:
         """Get the identifier for the most recent scope of a specific kind."""
         for scope in reversed(self.scopes):
@@ -93,8 +93,11 @@ class Patch(BaseModel):
             locations: list[Location] = []
 
             for path, diff in self.files.items():
-                file_patch = unidiff.PatchSet.from_string(self.patch)[path]
-                locations.extend(_find_changed_locations(diff.before, file_patch))
+                for file_patch in unidiff.PatchSet.from_string(self.patch):
+                    if file_patch.path == path:
+                        locations.extend(
+                            _find_changed_locations(diff.before, file_patch)
+                        )
 
             setattr(self, "_locations", locations)
 
@@ -113,10 +116,13 @@ class Patch(BaseModel):
         """
         files: dict[str, Diff] = {}
 
-        for file_patch in unidiff.PatchSet.from_string(patch):
-            source = _get_source_from_github(repo, base_commit, file_patch.path)
-            updated_source = _apply_file_patch(source, file_patch)
-            files[file_patch.path] = Diff(before=source, after=updated_source)
+        for file_patch in unidiff.PatchSet.from_string(patch, errors="ignore"):
+            try:
+                source = _get_source_from_github(repo, base_commit, file_patch.path)
+                updated_source = _apply_file_patch(source, file_patch)
+                files[file_patch.path] = Diff(before=source, after=updated_source)
+            except requests.HTTPError:
+                continue
 
         return Patch(patch=patch, files=files)
 
@@ -165,7 +171,7 @@ def _apply_file_patch(source: str, file_patch: unidiff.PatchedFile) -> str:
     return "".join(original_lines)
 
 
-@fs_cache
+@fs_cache()
 def _get_source_from_github(repo: str, commit: str, path: str) -> str:
     """Get the source code of a file from GitHub."""
     url = f"https://raw.githubusercontent.com/{repo}/{commit}/{path}"
@@ -206,7 +212,7 @@ def _find_changed_locations(
 
 class ScopeTracker(ast.NodeVisitor):
     """Utility class to track scopes in an AST."""
-    
+
     def __init__(self, filename: str, changed_lines: set[int]):
         """Initialize the scope tracker.
 

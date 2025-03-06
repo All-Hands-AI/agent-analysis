@@ -137,6 +137,10 @@ class Evaluation(BaseModel):
     def resolved(self) -> int:
         return sum(1 for result in self.results if result.test_result.report.resolved)
 
+    def is_resolved(self, instance_id: str) -> bool:
+        result = self.get_result(instance_id)
+        return result.test_result.report.resolved
+
     def to_dataframe(
         self,
         instance_callback: Callable[[EvaluationOutput, SWEBenchResult], dict[str, Any]],
