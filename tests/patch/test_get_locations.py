@@ -45,6 +45,7 @@ def test_function_scope():
     changed_lines = _parse_git_diff(patch)
     locations = _find_changed_locations(original, "test.py", changed_lines["test.py"])
 
+    print(changed_lines)
     assert len(locations) == 1
     assert [scope.name for scope in locations[0].scopes] == ["test.py", "test_func"]
     assert locations[0].line == 2
@@ -105,6 +106,8 @@ def test_class_in_function():
     patch = git_diff(original, modified, filename="test.py")
     changed_lines = _parse_git_diff(patch)
     locations = _find_changed_locations(original, "test.py", changed_lines["test.py"])
+
+    print(patch)
 
     assert len(locations) == 1
     assert [scope.name for scope in locations[0].scopes] == [

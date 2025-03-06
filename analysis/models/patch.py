@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import ast
 import requests
-import re
 from enum import Enum
 from typing import Any
 
@@ -98,7 +97,7 @@ class Patch(BaseModel):
             source = self.source[file_patch.path]
             updated_source = _apply_file_patch(source, file_patch)
             diffs[file_patch.path] = Diff(before=source, after=updated_source)
-        
+
         return diffs
 
     @property
@@ -190,7 +189,9 @@ def _get_source_from_github(repo: str, commit: str, path: str) -> str:
     return response.text
 
 
-def _find_changed_locations(source: str, filename: str, changed_lines: set[int]) -> list[Location]:
+def _find_changed_locations(
+    source: str, filename: str, changed_lines: set[int]
+) -> list[Location]:
     """Find the locations in a source file that were changed by a set of lines.
 
     Args:
@@ -210,6 +211,7 @@ def _find_changed_locations(source: str, filename: str, changed_lines: set[int])
 
     # Return all unique locations
     return list(set(tracker.locations))
+
 
 class ScopeTracker(ast.NodeVisitor):
     """Utility class to track scopes in an AST."""
@@ -272,121 +274,120 @@ class ScopeTracker(ast.NodeVisitor):
         # Continue visiting child nodes
         super().generic_visit(node)
 
-def _parse_git_diff(diff_str):
-    """
-    Parse a git diff string and return a dictionary mapping filenames to sets of line numbers
-    from the original source that were modified (including lines where content was added).
-    
+
+def _parse_git_diff(diff_str: str) -> dict[str, set[int]]:
+    """Parse a git diff string and return a dictionary mapping file names to sets of changed line numbers.
+
     Args:
-        diff_str: String representation of a git diff
-        
+        diff_str (str): The git diff string to parse
+
     Returns:
-        dict[str, set[int]]: Mapping of filenames to sets of modified line numbers
+        dict[str, set[int]]: A dictionary mapping file names to sets of line numbers that were changed
     """
     result = {}
     current_file = None
-    in_hunk = False
-    hunk_modified_lines = set()
-    
-    # Parse the diff line by line
     lines = diff_str.splitlines()
-    i = 0
-    while i < len(lines):
-        line = lines[i]
-        
-        # File headers
-        if line.startswith('--- '):
-            # End any current hunk processing
-            if in_hunk and current_file:
-                # Add any leftover modifications from previous hunk
-                result[current_file].update(hunk_modified_lines)
-                hunk_modified_lines = set()
-                in_hunk = False
-            
-            # Only process non-null files
-            if not line.startswith('--- /dev/null'):
-                current_file = line[4:].strip()
-                if current_file.startswith('a/'):
-                    current_file = current_file[2:]
-                result[current_file] = set()
+    line_index = 0
+
+    while line_index < len(lines):
+        line = lines[line_index]
+
+        # Check for file header
+        if line.startswith("diff --git"):
+            # Find the file name from the b/ path
+            next_line_index = line_index + 1
+            while next_line_index < len(lines):
+                next_line = lines[next_line_index]
+                if next_line.startswith("--- "):
+                    next_line_index += 1
+                    continue
+                if next_line.startswith("+++ "):
+                    file_path = next_line[6:]  # Skip the '+++ ' prefix
+                    # Remove a/ or b/ prefix if present
+                    if file_path.startswith("b/"):
+                        file_path = file_path[2:]
+                    current_file = file_path
+                    result[current_file] = set()
+                    break
+                next_line_index += 1
+            line_index = next_line_index + 1
+            continue
+
+        # Check for hunk header
+        if line.startswith("@@"):
+            # Extract line numbers from hunk header
+            # Format: @@ -<start>,<count> +<start>,<count> @@
+            parts = line.split(" ")
+            old_line_info = parts[1][1:]  # Remove the '-' prefix
+            if "," in old_line_info:
+                old_start = int(old_line_info.split(",")[0])
             else:
-                # This is a new file being added, will get name from +++ line
-                current_file = None
-        
-        elif line.startswith('+++ '):
-            # End any current hunk processing
-            if in_hunk and current_file:
-                # Add any leftover modifications from previous hunk
-                result[current_file].update(hunk_modified_lines)
-                hunk_modified_lines = set()
-                in_hunk = False
-            
-            if line.startswith('+++ /dev/null'):
-                # This is a file being deleted
-                pass
-            elif current_file is None:
-                # If we're dealing with a new file (previous line was "--- /dev/null")
-                # or if we somehow missed the "---" line
-                new_file = line[4:].strip()
-                if new_file.startswith('b/'):
-                    new_file = new_file[2:]
-                current_file = new_file
-                result[current_file] = set()
-        
-        # Hunk headers
-        elif line.startswith('@@') and current_file:
-            # End any current hunk processing
-            if in_hunk:
-                # Add any leftover modifications from previous hunk
-                result[current_file].update(hunk_modified_lines)
-                hunk_modified_lines = set()
-            
-            # Start new hunk processing
-            in_hunk = True
-            match = re.search(r'-(\d+)(?:,(\d+))?', line)
-            if match:
-                start_line = int(match.group(1))
-                current_line = start_line
-                
-                # Special case for new files - they start at position 0
-                if start_line == 0:
-                    hunk_modified_lines.add(0)
-            else:
-                # Malformed hunk header, skip it
-                in_hunk = False
-                i += 1
-                continue
-        
-        # Lines in a hunk
-        elif in_hunk and current_file:
-            if line.startswith('-'):
-                # Line was removed from the original file
-                hunk_modified_lines.add(current_line)
-                current_line += 1
-            elif line.startswith('+'):
-                # Line was added - mark the insertion point
-                # The insertion point is the current position in the original file
-                hunk_modified_lines.add(current_line)
-                # Don't increment the line counter for additions
-            elif not line.startswith('\\'):  # Ignore "\ No newline at end of file"
-                # Unchanged context line
-                current_line += 1
-        
-        i += 1
-    
-    # Add any modifications from the last hunk
-    if in_hunk and current_file and hunk_modified_lines:
-        result[current_file].update(hunk_modified_lines)
-    
-    # Post-process for deleted files to ensure all lines are marked
-    for file in list(result.keys()):
-        file_content = "\n".join(lines)
-        if f"--- a/{file}" in file_content and "+++ /dev/null" in file_content:
-            # This file was deleted - try to find how many lines were deleted
-            match = re.search(r'@@ -1,(\d+) \+0,0 @@', file_content)
-            if match:
-                line_count = int(match.group(1))
-                # Mark all lines as modified
-                result[file] = set(range(1, line_count + 1))
-    
+                old_start = int(old_line_info)
+
+            # Move past hunk header
+            line_index += 1
+
+            # Process the hunk content
+            current_line = old_start
+            line_index_within_hunk = line_index
+
+            # First pass: identify pairs of removed/added lines (changes)
+            while line_index_within_hunk < len(lines) and not (
+                lines[line_index_within_hunk].startswith("@@")
+                or lines[line_index_within_hunk].startswith("diff --git")
+            ):
+                if (
+                    line_index_within_hunk + 1 < len(lines)
+                    and lines[line_index_within_hunk].startswith("-")
+                    and lines[line_index_within_hunk + 1].startswith("+")
+                ):
+                    # Mark this as a change (will be processed in the next pass)
+                    lines[line_index_within_hunk] = (
+                        "!-" + lines[line_index_within_hunk][1:]
+                    )
+                    lines[line_index_within_hunk + 1] = (
+                        "!+" + lines[line_index_within_hunk + 1][1:]
+                    )
+                line_index_within_hunk += 1
+
+            # Second pass: process all lines
+            while line_index < len(lines) and not (
+                lines[line_index].startswith("@@")
+                or lines[line_index].startswith("diff --git")
+            ):
+                line = lines[line_index]
+
+                if line.startswith(" "):
+                    # Unchanged line
+                    current_line += 1
+                elif line.startswith("!-"):
+                    # Part of a change (remove+add) - add the line number
+                    result[current_file].add(current_line)
+                    current_line += 1
+                elif line.startswith("!+"):
+                    # Part of a change (remove+add) - already counted, just move on
+                    pass
+                elif line.startswith("-"):
+                    # Pure removed line (not part of a change)
+                    result[current_file].add(current_line)
+                    current_line += 1
+                elif line.startswith("+"):
+                    # Pure added line (not part of a change)
+                    result[current_file].add(current_line)
+                    # Don't increment current_line for added lines
+
+                line_index += 1
+
+            # If we've reached the end of a hunk but not the start of a new one or file,
+            # we need to continue to the next line
+            if line_index < len(lines) and not (
+                lines[line_index].startswith("@@")
+                or lines[line_index].startswith("diff --git")
+            ):
+                line_index += 1
+
+            continue
+
+        line_index += 1
+
     return result
