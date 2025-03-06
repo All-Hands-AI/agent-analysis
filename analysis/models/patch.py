@@ -13,14 +13,25 @@ from analysis.utility import fs_cache
 
 
 class ScopeKind(str, Enum):
+    """Denotes the kind of scope boundary."""
+    
     FILE = "file"
     FUNCTION = "function"
     CLASS = "class"
 
 
 class Scope(BaseModel):
+    """Scopes represent syntactic and semantic blocks of code.
+    
+    We don't consider _all_ traditional scope boundaries, and instead stick with
+    scopes that represent common abstractions that aren't control-flow.
+    """
+    
     kind: ScopeKind
+    """The kind of scope."""
+
     name: str
+    """The name for the scope, e.g. the class/function."""
 
     def __hash__(self):
         return hash((self.kind, self.name))
@@ -36,7 +47,13 @@ class Location(BaseModel):
     """Represents a location in a source file."""
 
     scopes: list[Scope]
+    """
+    A stack of scopes representing the conceptual location. Should always
+    start with a `ScopeKind.FILE` scope.
+    """
+    
     line: int
+    """The line number in the source file."""
 
     def __hash__(self) -> int:
         return hash((tuple(self.scopes), self.line))
@@ -46,6 +63,13 @@ class Location(BaseModel):
             return False
 
         return self.scopes == other.scopes and self.line == other.line
+    
+    def most_recent_scope(self, kind: ScopeKind) -> str | None:
+        """Get the identifier for the most recent scope of a specific kind."""
+        for scope in reversed(self.scopes):
+            if scope.kind == kind:
+                return scope.name
+        return None
 
 
 class Diff(BaseModel):
@@ -61,16 +85,20 @@ class Patch(BaseModel):
     patch: str
     files: dict[str, Diff]
 
+    @property
     def locations(self) -> list[Location]:
         """Find the locations in the source files that were changed by the patch."""
 
-        locations: list[Location] = []
+        if not hasattr(self, "_locations"):
+            locations: list[Location] = []
 
-        for path, diff in self.files.items():
-            file_patch = unidiff.PatchSet.from_string(self.patch)[path]
-            locations.extend(_find_changed_locations(diff.before, file_patch))
+            for path, diff in self.files.items():
+                file_patch = unidiff.PatchSet.from_string(self.patch)[path]
+                locations.extend(_find_changed_locations(diff.before, file_patch))
 
-        return locations
+            setattr(self, "_locations", locations)
+
+        return getattr(self, "_locations")
 
     @staticmethod
     def from_github(repo: str, base_commit: str, patch: str) -> Patch:
@@ -177,7 +205,19 @@ def _find_changed_locations(
 
 
 class ScopeTracker(ast.NodeVisitor):
+    """Utility class to track scopes in an AST."""
+    
     def __init__(self, filename: str, changed_lines: set[int]):
+        """Initialize the scope tracker.
+
+        Args:
+            filename: The name of the file being tracked. Generates the top-most
+                scope for the analysis.
+
+            changed_lines: A set of line numbers that were changed in the file.
+                When the tracker hits a node corresponding to one of these lines
+                a location is generated.
+        """
         self.changed_lines = changed_lines
         self.current_scopes: list[Scope] = [Scope(kind=ScopeKind.FILE, name=filename)]
         self.locations: list[Location] = []
