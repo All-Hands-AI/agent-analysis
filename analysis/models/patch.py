@@ -83,7 +83,22 @@ class Patch(BaseModel):
     """Represents a git patch."""
 
     patch: str
-    files: dict[str, Diff]
+    """The raw git patch."""
+
+    source: dict[str, str]
+    """The source code of the files before the patch."""
+
+    @property
+    def diffs(self) -> dict[str, Diff]:
+        """Compute the list of diffs from the original source by applying the patch."""
+        diffs: dict[str, Diff] = {}
+
+        for file_patch in unidiff.PatchSet.from_string(self.patch, errors="ignore"):
+            source = self.source[file_patch.path]
+            updated_source = _apply_file_patch(source, file_patch)
+            diffs[file_patch.path] = Diff(before=source, after=updated_source)
+        
+        return diffs
 
     @property
     def locations(self) -> list[Location]:
@@ -92,7 +107,7 @@ class Patch(BaseModel):
         if not hasattr(self, "_locations"):
             locations: list[Location] = []
 
-            for path, diff in self.files.items():
+            for path, diff in self.diffs.items():
                 for file_patch in unidiff.PatchSet.from_string(self.patch):
                     if file_patch.path == path:
                         locations.extend(
@@ -124,7 +139,7 @@ class Patch(BaseModel):
             except requests.HTTPError:
                 continue
 
-        return Patch(patch=patch, files=files)
+        return Patch(patch=patch, diffs=files)
 
     @staticmethod
     def from_instance(instance: Instance) -> Patch:
