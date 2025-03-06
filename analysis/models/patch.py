@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import requests
+import re
 from enum import Enum
 from typing import Any
 
@@ -129,7 +130,7 @@ class Patch(BaseModel):
             base_commit: Base commit hash.
             patch: Patch in unified diff format.
         """
-        files: dict[str, Diff] = {}
+        files: dict[str, str] = {}
 
         for file_patch in unidiff.PatchSet.from_string(patch, errors="ignore"):
             try:
@@ -139,7 +140,7 @@ class Patch(BaseModel):
             except requests.HTTPError:
                 continue
 
-        return Patch(patch=patch, diffs=files)
+        return Patch(patch=patch, source=files)
 
     @staticmethod
     def from_instance(instance: Instance) -> Patch:
@@ -285,3 +286,122 @@ class ScopeTracker(ast.NodeVisitor):
         self._check_node(node)
         # Continue visiting child nodes
         super().generic_visit(node)
+
+def _parse_git_diff(diff_str):
+    """
+    Parse a git diff string and return a dictionary mapping filenames to sets of line numbers
+    from the original source that were modified (including lines where content was added).
+    
+    Args:
+        diff_str: String representation of a git diff
+        
+    Returns:
+        dict[str, set[int]]: Mapping of filenames to sets of modified line numbers
+    """
+    result = {}
+    current_file = None
+    in_hunk = False
+    hunk_modified_lines = set()
+    
+    # Parse the diff line by line
+    lines = diff_str.splitlines()
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        
+        # File headers
+        if line.startswith('--- '):
+            # End any current hunk processing
+            if in_hunk and current_file:
+                # Add any leftover modifications from previous hunk
+                result[current_file].update(hunk_modified_lines)
+                hunk_modified_lines = set()
+                in_hunk = False
+            
+            # Only process non-null files
+            if not line.startswith('--- /dev/null'):
+                current_file = line[4:].strip()
+                if current_file.startswith('a/'):
+                    current_file = current_file[2:]
+                result[current_file] = set()
+            else:
+                # This is a new file being added, will get name from +++ line
+                current_file = None
+        
+        elif line.startswith('+++ '):
+            # End any current hunk processing
+            if in_hunk and current_file:
+                # Add any leftover modifications from previous hunk
+                result[current_file].update(hunk_modified_lines)
+                hunk_modified_lines = set()
+                in_hunk = False
+            
+            if line.startswith('+++ /dev/null'):
+                # This is a file being deleted
+                pass
+            elif current_file is None:
+                # If we're dealing with a new file (previous line was "--- /dev/null")
+                # or if we somehow missed the "---" line
+                new_file = line[4:].strip()
+                if new_file.startswith('b/'):
+                    new_file = new_file[2:]
+                current_file = new_file
+                result[current_file] = set()
+        
+        # Hunk headers
+        elif line.startswith('@@') and current_file:
+            # End any current hunk processing
+            if in_hunk:
+                # Add any leftover modifications from previous hunk
+                result[current_file].update(hunk_modified_lines)
+                hunk_modified_lines = set()
+            
+            # Start new hunk processing
+            in_hunk = True
+            match = re.search(r'-(\d+)(?:,(\d+))?', line)
+            if match:
+                start_line = int(match.group(1))
+                current_line = start_line
+                
+                # Special case for new files - they start at position 0
+                if start_line == 0:
+                    hunk_modified_lines.add(0)
+            else:
+                # Malformed hunk header, skip it
+                in_hunk = False
+                i += 1
+                continue
+        
+        # Lines in a hunk
+        elif in_hunk and current_file:
+            if line.startswith('-'):
+                # Line was removed from the original file
+                hunk_modified_lines.add(current_line)
+                current_line += 1
+            elif line.startswith('+'):
+                # Line was added - mark the insertion point
+                # The insertion point is the current position in the original file
+                hunk_modified_lines.add(current_line)
+                # Don't increment the line counter for additions
+            elif not line.startswith('\\'):  # Ignore "\ No newline at end of file"
+                # Unchanged context line
+                current_line += 1
+        
+        i += 1
+    
+    # Add any modifications from the last hunk
+    if in_hunk and current_file and hunk_modified_lines:
+        result[current_file].update(hunk_modified_lines)
+    
+    # Post-process for deleted files to ensure all lines are marked
+    for file in list(result.keys()):
+        file_content = "\n".join(lines)
+        if f"--- a/{file}" in file_content and "+++ /dev/null" in file_content:
+            # This file was deleted - try to find how many lines were deleted
+            match = re.search(r'@@ -1,(\d+) \+0,0 @@', file_content)
+            if match:
+                line_count = int(match.group(1))
+                # Mark all lines as modified
+                result[file] = set(range(1, line_count + 1))
+    
+    return result
