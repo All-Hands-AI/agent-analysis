@@ -131,14 +131,8 @@ class Patch(BaseModel):
             patch: Patch in unified diff format.
         """
         files: dict[str, str] = {}
-
-        for file_patch in unidiff.PatchSet.from_string(patch, errors="ignore"):
-            try:
-                source = _get_source_from_github(repo, base_commit, file_patch.path)
-                updated_source = _apply_file_patch(source, file_patch)
-                files[file_patch.path] = Diff(before=source, after=updated_source)
-            except requests.HTTPError:
-                continue
+        for filename, _ in _parse_git_diff(patch).items():
+            files[filename] = _get_source_from_github(repo, base_commit, filename)
 
         return Patch(patch=patch, source=files)
 
