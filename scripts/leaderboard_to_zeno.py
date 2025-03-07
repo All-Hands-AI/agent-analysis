@@ -3,6 +3,7 @@ Convert the current SWE-bench leaderboard to a Zeno project.
 """
 
 from datetime import datetime
+import re
 
 import pandas as pd
 import click
@@ -68,7 +69,15 @@ def main(split: Split, zeno_api_key: str | None, top_n: int | None) -> None:
             print(f"Skipping {entry} during counting: {e}")
             continue
 
-    # Build and upload the dataset with resolution counts
+    def has_major_version_change(text):
+        """Check if the issue involves major version changes"""
+        # Look for major version changes (e.g., 2.x to 3.x)
+        version_pattern = r'(\d+)\.\d+(\.\d+)?'
+        versions = re.findall(version_pattern, text)
+        major_versions = {int(v[0]) for v in versions if v[0]}
+        return len(major_versions) > 1
+
+    # Build and upload the dataset with resolution counts and major version changes
     dataset = Dataset.from_split(split)
     viz_project.upload_dataset(
         pd.DataFrame([{
@@ -77,6 +86,7 @@ def main(split: Split, zeno_api_key: str | None, top_n: int | None) -> None:
             'repo': instance.repo,
             'base_commit': instance.base_commit,
             'times_resolved': resolution_counts.get(instance.instance_id, 0),
+            'has_major_version_change': has_major_version_change(instance.problem_statement),
         } for instance in dataset.instances]),
         id_column="instance_id",
         data_column="problem_statement",
