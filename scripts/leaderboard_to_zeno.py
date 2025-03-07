@@ -40,6 +40,7 @@ def main(split: Split, zeno_api_key: str | None, top_n: int | None) -> None:
                 "type": "vstack",
                 "keys": {
                     "status": {"type": "text", "label": "Status"},
+                    "resolution_count": {"type": "text", "label": "Resolutions"},
                     "patch": {"type": "code"},
                 }
             },
@@ -47,7 +48,8 @@ def main(split: Split, zeno_api_key: str | None, top_n: int | None) -> None:
         description=f"SWE-bench leaderboard (as of {current_time}) performance analysis, by entry.",
         public=True,
         metrics=[
-            zeno_client.ZenoMetric(name="resolved", type="mean", columns=["resolved"])
+            zeno_client.ZenoMetric(name="resolved", type="mean", columns=["resolved"]),
+            zeno_client.ZenoMetric(name="files_modified", type="mean", columns=["files_modified"])
         ],
     )
 
@@ -91,9 +93,24 @@ def main(split: Split, zeno_api_key: str | None, top_n: int | None) -> None:
             return len(changed_lines)
         except Exception:
             return 0
+            
+    def get_files_modified(instance):
+        """Get the number of files modified in the gold-standard patch"""
+        try:
+            patch = instance.patch
+            if not patch:
+                return 0
+            # Count lines that start with "diff --git"
+            lines = [line.strip() for line in patch.split('\n')]
+            file_count = sum(1 for line in lines if line.startswith('diff --git'))
+            return file_count
+        except Exception:
+            return 0
 
     # Build and upload the dataset with resolution counts, major version changes, and patch info
     dataset = Dataset.from_split(split)
+    # Create a lookup dictionary for instances
+    instances_by_id = {instance.instance_id: instance for instance in dataset.instances}
     viz_project.upload_dataset(
         pd.DataFrame([{
             'instance_id': instance.instance_id,
@@ -103,6 +120,7 @@ def main(split: Split, zeno_api_key: str | None, top_n: int | None) -> None:
             'times_resolved': resolution_counts.get(instance.instance_id, 0),
             'has_major_version_change': has_major_version_change(instance.problem_statement),
             'patch_length': get_patch_length(instance),
+            'files_modified': get_files_modified(instance),
             'gold_patch': instance.patch or "No patch available",
         } for instance in dataset.instances]),
         id_column="instance_id",
