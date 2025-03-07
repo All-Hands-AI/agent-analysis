@@ -35,24 +35,28 @@ def main(split: Split, zeno_api_key: str | None, top_n: int | None) -> None:
         name="SWE-bench Leaderboard",
         view={
             "data": {
-                "type": "markdown"
+                "type": "markdown",
+                "content": {"type": "data", "field": "problem_statement"}
             },
             "output": {
                 "type": "vstack",
-                "keys": {
-                    "status": {
+                "elements": [
+                    {
                         "type": "text",
+                        "content": {"type": "output", "field": "status"},
                         "label": "Status"
                     },
-                    "patch": {
+                    {
                         "type": "code",
+                        "content": {"type": "output", "field": "patch"},
                         "label": "Generated Patch"
                     },
-                    "gold_patch": {
+                    {
                         "type": "code",
+                        "content": {"type": "data", "field": "gold_patch"},
                         "label": "Gold Standard Patch"
                     }
-                }
+                ]
             },
         },
         description=f"SWE-bench leaderboard (as of {current_time}) performance analysis, by entry.",
