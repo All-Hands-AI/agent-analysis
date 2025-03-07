@@ -88,6 +88,8 @@ class Patch(BaseModel):
     source: dict[str, str]
     """The source code of the files before the patch."""
 
+    missing_files: list[str] = []
+
     @property
     def diffs(self) -> dict[str, Diff]:
         """Compute the list of diffs from the original source by applying the patch."""
@@ -108,18 +110,21 @@ class Patch(BaseModel):
             locations: list[Location] = []
 
             for filename, changed_lines in _parse_git_diff(self.patch).items():
-                locations.extend(
-                    _find_changed_locations(
-                        self.source[filename], filename, changed_lines
+                if filename not in self.missing_files:
+                    locations.extend(
+                        _find_changed_locations(
+                            self.source[filename], filename, changed_lines
+                        )
                     )
-                )
 
             setattr(self, "_locations", locations)
 
         return getattr(self, "_locations")
 
     @staticmethod
-    def from_github(repo: str, base_commit: str, patch: str) -> Patch:
+    def from_github(
+        repo: str, base_commit: str, patch: str, skip_missing_files: bool = True
+    ) -> Patch:
         """Create a Patch object from a GitHub patch.
 
         Requires downloading the source code of the base commit from GitHub.
@@ -128,12 +133,20 @@ class Patch(BaseModel):
             repo: GitHub repository in the format 'owner/repo'.
             base_commit: Base commit hash.
             patch: Patch in unified diff format.
+            skip_missing_files: Skip files that are not found in the base commit.
         """
         files: dict[str, str] = {}
+        missing_files = []
         for filename, _ in _parse_git_diff(patch).items():
-            files[filename] = _get_source_from_github(repo, base_commit, filename)
+            try:
+                files[filename] = _get_source_from_github(repo, base_commit, filename)
+            except requests.HTTPError as e:
+                if skip_missing_files:
+                    missing_files.append(filename)
+                    continue
+                raise e
 
-        return Patch(patch=patch, source=files)
+        return Patch(patch=patch, source=files, missing_files=missing_files)
 
     @staticmethod
     def from_instance(instance: Instance) -> Patch:
