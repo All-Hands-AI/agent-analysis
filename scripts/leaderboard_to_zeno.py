@@ -37,7 +37,8 @@ def main(split: Split, zeno_api_key: str | None, top_n: int | None) -> None:
             "data": {
                 "type": "list",
                 "elements": {
-                    "type": "markdown"
+                    "type": "markdown",
+                    "content": {"type": "data", "field": "problem_statement"}
                 }
             },
             "output": {
@@ -46,13 +47,16 @@ def main(split: Split, zeno_api_key: str | None, top_n: int | None) -> None:
                     "type": "vstack",
                     "keys": {
                         "status": {
-                            "type": "text"
+                            "type": "text",
+                            "content": {"type": "output", "field": "status"}
                         },
                         "patch": {
-                            "type": "code"
+                            "type": "code",
+                            "content": {"type": "output", "field": "patch"}
                         },
                         "gold_patch": {
-                            "type": "code"
+                            "type": "code",
+                            "content": {"type": "data", "field": "gold_patch"}
                         }
                     }
                 }
