@@ -255,11 +255,21 @@ class Evaluation(BaseModel):
         Generate an evaluation directly from the data on GitHub.
         """
 
-        predictions = [
-            Prediction.model_validate_json(line)
-            for line in get_gh_file(split, entry, "all_preds.jsonl").split("\n")
-            if line
-        ]
+        content = get_gh_file(split, entry, "all_preds.jsonl")
+        try:
+            # Try parsing as JSON array first
+            import json
+            predictions = [
+                Prediction.model_validate(pred) 
+                for pred in json.loads(content)
+            ]
+        except json.JSONDecodeError:
+            # Fall back to line-by-line JSONL parsing
+            predictions = [
+                Prediction.model_validate_json(line)
+                for line in content.split("\n")
+                if line
+            ]
 
         results = Results.model_validate_json(
             get_gh_file(split, entry, "results/results.json")
