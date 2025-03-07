@@ -34,26 +34,14 @@ def main(split: Split, zeno_api_key: str | None, top_n: int | None) -> None:
     viz_project = viz_client.create_project(
         name="SWE-bench Leaderboard",
         view={
-            "data": {
-                "type": "markdown",
-                "content": "problem_statement"
-            },
+            "data": {"type": "markdown"},
+            "label": {"type": "text"},
             "output": {
                 "type": "vstack",
-                "elements": [
-                    {
-                        "type": "text",
-                        "content": "status"
-                    },
-                    {
-                        "type": "code",
-                        "content": "patch"
-                    },
-                    {
-                        "type": "code",
-                        "content": "gold_patch"
-                    }
-                ]
+                "keys": {
+                    "status": {"type": "text", "label": "Status"},
+                    "patch": {"type": "code"},
+                }
             },
         },
         description=f"SWE-bench leaderboard (as of {current_time}) performance analysis, by entry.",
