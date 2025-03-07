@@ -36,11 +36,13 @@ def main(split: Split, zeno_api_key: str | None, top_n: int | None) -> None:
         view={
             "data": {"type": "markdown"},
             "label": {"type": "text"},
+            "patch_length": {"type": "number", "label": "Gold Patch Length"},
+            "gold_patch": {"type": "code", "label": "Gold Standard Patch"},
             "output": {
                 "type": "vstack",
                 "keys": {
                     "status": {"type": "text", "label": "Status"},
-                    "patch": {"type": "code"},
+                    "patch": {"type": "code", "label": "Generated Patch"},
                 }
             },
         },
@@ -77,7 +79,22 @@ def main(split: Split, zeno_api_key: str | None, top_n: int | None) -> None:
         major_versions = {int(v[0]) for v in versions if v[0]}
         return len(major_versions) > 1
 
-    # Build and upload the dataset with resolution counts and major version changes
+    def get_patch_length(instance):
+        """Get the number of lines changed in the gold-standard patch"""
+        try:
+            patch = instance.patch
+            if not patch:
+                return 0
+            # Count lines that start with + or - (excluding chunk headers)
+            lines = [line.strip() for line in patch.split('\n')]
+            changed_lines = [line for line in lines 
+                           if line and (line.startswith('+') or line.startswith('-'))
+                           and not line.startswith(('+++', '---'))]
+            return len(changed_lines)
+        except Exception:
+            return 0
+
+    # Build and upload the dataset with resolution counts, major version changes, and patch info
     dataset = Dataset.from_split(split)
     viz_project.upload_dataset(
         pd.DataFrame([{
@@ -87,6 +104,8 @@ def main(split: Split, zeno_api_key: str | None, top_n: int | None) -> None:
             'base_commit': instance.base_commit,
             'times_resolved': resolution_counts.get(instance.instance_id, 0),
             'has_major_version_change': has_major_version_change(instance.problem_statement),
+            'patch_length': get_patch_length(instance),
+            'gold_patch': instance.patch or "No patch available",
         } for instance in dataset.instances]),
         id_column="instance_id",
         data_column="problem_statement",
