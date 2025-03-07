@@ -36,12 +36,12 @@ def main(split: Split, zeno_api_key: str | None, top_n: int | None) -> None:
         view={
             "data": {"type": "markdown"},
             "label": {"type": "text"},
-            "gold_patch": {"type": "code", "label": "Gold Standard Patch"},
             "output": {
                 "type": "vstack",
                 "keys": {
                     "status": {"type": "text", "label": "Status"},
                     "patch": {"type": "code", "label": "Generated Patch"},
+                    "gold_patch": {"type": "code", "label": "Gold Standard Patch"}
                 }
             },
         },
