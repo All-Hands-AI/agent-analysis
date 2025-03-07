@@ -8,7 +8,7 @@ import pandas as pd
 import click
 import zeno_client
 
-from analyis.models.swe_bench import Split, Dataset, Evaluation
+from analysis.models.swe_bench import Split, Dataset, Evaluation
 
 
 @click.command()
