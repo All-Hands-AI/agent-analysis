@@ -8,7 +8,7 @@ import pandas as pd
 import click
 import zeno_client
 
-from analyis.models.swe_bench import Split, Dataset, Evaluation
+from analysis.models.swe_bench import Split, Dataset, Evaluation
 
 
 @click.command()
@@ -50,7 +50,25 @@ def main(split: Split, zeno_api_key: str | None, top_n: int | None) -> None:
         ],
     )
 
-    # Build and upload the dataset.
+    # Get entries for the split first to count resolutions
+    entries = split.get_all_entries()
+    
+    # Track resolution counts per instance
+    resolution_counts = {}
+    
+    # First pass to count resolutions
+    for entry in entries:
+        try:
+            system = Evaluation.from_github(split, entry)
+            for prediction in system.predictions:
+                instance_id = prediction.instance_id
+                if system.results.is_resolved(instance_id):
+                    resolution_counts[instance_id] = resolution_counts.get(instance_id, 0) + 1
+        except ValueError as e:
+            print(f"Skipping {entry} during counting: {e}")
+            continue
+
+    # Build and upload the dataset with resolution counts
     dataset = Dataset.from_split(split)
     viz_project.upload_dataset(
         pd.DataFrame([{
@@ -58,6 +76,7 @@ def main(split: Split, zeno_api_key: str | None, top_n: int | None) -> None:
             'problem_statement': instance.problem_statement,
             'repo': instance.repo,
             'base_commit': instance.base_commit,
+            'times_resolved': resolution_counts.get(instance.instance_id, 0),
         } for instance in dataset.instances]),
         id_column="instance_id",
         data_column="problem_statement",
@@ -98,6 +117,7 @@ def main(split: Split, zeno_api_key: str | None, top_n: int | None) -> None:
                         "status": "✅ Success" if system.results.is_resolved(prediction.instance_id)
                                 else "❌ Failed" if prediction.patch
                                 else "Not attempted",
+                        "resolution_count": f"{resolution_counts.get(prediction.instance_id, 0)} systems",
                         "patch": prediction.patch or "No patch generated",
                     }
                 }
