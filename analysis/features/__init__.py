@@ -52,3 +52,6 @@ def compute_instance_features(instances: Iterable[Instance]) -> pd.DataFrame:
         rows.append(row)
 
     return pd.concat(rows)
+
+# Export the compute_features function that's imported in __main__.py
+compute_features = compute_instance_features
