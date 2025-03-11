@@ -3,11 +3,9 @@ import json
 import hashlib
 import functools
 import pickle
-from typing import Any, Callable, TypeVar, cast
+from typing import Any, Callable, cast
 
-T = TypeVar('T')
-
-def fs_cache(
+def fs_cache[T](
     cache_dir: str = '/tmp/fs_cache',
     env_invalidate: str = 'FS_CACHE_INVALIDATE',
     env_disable: str = 'FS_CACHE_DISABLE'
@@ -97,3 +95,4 @@ def _generate_cache_key(func_name: str, args: tuple, kwargs: dict) -> str:
     # Create a hash of the function name and arguments
     key_data = f"{func_name}:{args_str}:{kwargs_str}".encode('utf-8')
     return hashlib.md5(key_data).hexdigest()
+
