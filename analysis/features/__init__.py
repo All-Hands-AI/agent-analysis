@@ -14,7 +14,6 @@ from analysis.features.metrics import (
     apply_metrics,
 )
 
-
 def compute_instance_features(instances: Iterable[Instance]) -> pd.DataFrame:
     """Compute features for a list of instances."""
     rows = []

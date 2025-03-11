@@ -27,7 +27,7 @@ class EvaluationOutput(BaseModel):
     instance_id: str
     # output of the evaluation
     # store anything that is needed for the score calculation
-    test_result: dict[str, Any]
+    test_result: dict[str, Any] | None = None
 
     instruction: str | None = None
 
@@ -95,16 +95,21 @@ class Evaluation(BaseModel):
     results: list[SWEBenchResult]
 
     @staticmethod
-    def from_filepath(filepath: str) -> Evaluation:
-        with open(os.path.join(filepath, "metadata.json")) as f:
+    def from_filepath(
+        filepath: str,
+        metadata_filename: str = "metadata.json",
+        output_filename: str = "output.jsonl",
+        eval_filename: str = "output.swebench_eval.jsonl",
+    ) -> Evaluation:
+        with open(os.path.join(filepath, metadata_filename)) as f:
             metadata = EvaluationMetadata.model_validate_json(f.read())
 
-        with open(os.path.join(filepath, "output.jsonl")) as f:
+        with open(os.path.join(filepath, output_filename)) as f:
             output = [
                 EvaluationOutput.model_validate_json(line) for line in f.readlines()
             ]
 
-        with open(os.path.join(filepath, "output.swebench_eval.jsonl")) as f:
+        with open(os.path.join(filepath, eval_filename)) as f:
             results = [
                 SWEBenchResult.model_validate_json(line) for line in f.readlines()
             ]
@@ -136,6 +141,13 @@ class Evaluation(BaseModel):
 
     def resolved(self) -> int:
         return sum(1 for result in self.results if result.test_result.report.resolved)
+
+    def is_resolved(self, instance_id: str) -> bool:
+        try:
+            result = self.get_result(instance_id)
+            return result.test_result.report.resolved
+        except KeyError:
+            return False
 
     def to_dataframe(
         self,
