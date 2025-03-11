@@ -3,7 +3,7 @@ import click
 
 from analysis.models.swe_bench import Split
 from analysis.models.data import Data
-from analysis.features import compute_features as compute_features_dataframe
+from analysis.features import compute_instance_features, compute_localization_metrics
 
 @click.group()
 def cli(): ...
@@ -35,7 +35,19 @@ def compute_features(input: str, output: str) -> None:
     with open(input) as f:
         data = Data.model_validate_json(f.read())
 
-    df = compute_features_dataframe(data.dataset.instances)
+    df = compute_instance_features(data.dataset.instances)
+    df.to_csv(output, index=False)
+
+@cli.command()
+@click.option("--input", "-i", type=str, default="data.json")
+@click.option("--output", "-o", type=str, default="localization.csv")
+@click.option("--error-rate", type=float, default=0.1)
+def compute_localization(input: str, output: str, error_rate: float) -> None:
+    """Compute localization scores for the data."""
+    with open(input) as f:
+        data = Data.model_validate_json(f.read())
+
+    df = compute_localization_metrics(data, allowable_error_rate=error_rate)
     df.to_csv(output, index=False)
 
 if __name__ == "__main__":

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import requests
+import warnings
 from enum import Enum
 from typing import Any
 
@@ -216,7 +217,9 @@ def _find_changed_locations(
         A list of Location objects representing the changes.
     """
     # Parse the source code into an AST
-    tree = ast.parse(source)
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", category=SyntaxWarning)
+        tree = ast.parse(source)
 
     # Walk the AST and track scopes
     tracker = ScopeTracker(filename, changed_lines)
