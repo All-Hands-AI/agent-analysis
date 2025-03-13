@@ -23,7 +23,7 @@ def apply_metrics(patch: Patch, metrics: dict[str, Type[Metrics]]) -> dict[str, 
         metrics_before = metric()
         metrics_after = metric()
         
-        for diff in patch.files.values():
+        for diff in patch.diffs.values():
             metrics_before += metric.from_str(diff.before)
             metrics_after += metric.from_str(diff.after)
 
