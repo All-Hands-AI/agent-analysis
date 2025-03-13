@@ -1,5 +1,8 @@
+from __future__ import annotations
+
 from pydantic import BaseModel, Field, field_validator
 from typing import Any
+from pathlib import Path
 
 
 class PromptTokensDetails(BaseModel):
@@ -138,15 +141,16 @@ class Response(BaseModel):
     cost: float | None = None
     """Cost of the API call in USD."""
 
+
 class ContentItem(BaseModel):
     """Individual content item within a message."""
-    
+
     type: str
     """Type of content, typically 'text'."""
-    
+
     text: str
     """The actual text content."""
-    
+
     cache_control: dict[str, str] | None = None
     """Optional caching directives for this content item."""
 
@@ -156,19 +160,19 @@ class ContentItem(BaseModel):
 
 class Message(BaseModel):
     """A message in the conversation sent to or received from the LLM."""
-    
+
     content: list[ContentItem]
     """List of content items composing this message."""
-    
+
     role: str
     """Role of the message sender (e.g., 'user', 'assistant', 'system')."""
-    
+
     tool_calls: list[dict[str, Any]] | None = None
     """Tool calls made by the assistant, if any."""
-    
+
     tool_call_id: str | None = None
     """ID of a tool call this message is responding to, if applicable."""
-    
+
     name: str | None = None
     """Optional name identifier for the message sender."""
 
@@ -177,30 +181,52 @@ class Message(BaseModel):
         # we convert it to a tuple of hashes instead.
         return hash((self.name, self.role, tuple(hash(item) for item in self.content)))
 
-    @field_validator('content', mode='before')
+    @field_validator("content", mode="before")
     def ensure_list_content(cls, content):
         """Ensures content is a list of content items."""
         if not isinstance(content, list):
-            return [ContentItem(type='text', text=content)]
+            return [ContentItem(type="text", text=content)]
         return content
+
 
 class Completion(BaseModel):
     """A single completion request-response pair."""
-    
+
     messages: list[Message]
     """Messages sent to the LLM as the completion request."""
-    
+
     response: Response
     """Response received from the LLM API."""
 
 
 class Conversation(BaseModel):
     """A full conversation consisting of multiple completion turns."""
-    
+
     turns: list[Completion]
     """Sequential completion request-response turns in the conversation."""
 
-    @field_validator('turns')
+    @field_validator("turns")
     def sort_turns_by_created_time(cls, turns):
         """Ensures turns are sorted by their response.created timestamp."""
         return sorted(turns, key=lambda turn: turn.response.created)
+
+    @staticmethod
+    def from_completion_logs_dir(completion_logs_dir: Path) -> Conversation:
+        """Completion logs are stored in a directory where each completion is a JSON file.
+
+        This function loads each JSON file as a completion and stitches them together in order to create a conversation.
+        """
+
+        turns = []
+        for turn_path in completion_logs_dir.iterdir():
+            with turn_path.open("r") as f:
+                turn = Completion.model_validate_json(f.read())
+                turns.append(turn)
+        return Conversation(turns=turns)
+
+def completion_logs_dirs_from_openhands_evaluation(openhands_evaluation_dir: Path) -> list[Path]:
+    """Uses the expected structure of OpenHands evaluation files to return a list of completion log directories."""
+    return [
+        path for path in (openhands_evaluation_dir / "llm_completions").iterdir()
+        if path.is_dir()
+    ]
