@@ -13,7 +13,13 @@ from analysis.models.openhands import EvaluationOutput
 
 
 @cli.group()
-def localization(): ...
+def localization():
+    """Commands for computing localization metrics.
+    
+    Use these commands to compute localization data and combine them together in a
+    report that captures localization metrics like file, function, and class match
+    and precision.
+    """
 
 
 @localization.command()
@@ -22,8 +28,15 @@ def localization(): ...
     type=Split,
     default="verified",
     callback=lambda _ctx, _, value: Split.from_str(value),
+    help="The split containing evaluation instances.",
 )
-@click.option("--output", "-o", type=str, default="gold_localization_report.json")
+@click.option(
+    "--output",
+    "-o",
+    type=str,
+    default="gold_localization_data.json",
+    help="Output file.",
+)
 def compute_gold(split: Split, output: str) -> None:
     """Compute localization data for the SWE-bench ground-truth patches."""
     click.echo(f"Computing golden localization data for SWE-bench {split.value}...")
@@ -62,11 +75,19 @@ def compute_gold(split: Split, output: str) -> None:
 
 
 @localization.command()
-@click.option("--input", "-i", type=str, default="data.json")
 @click.option(
-    "--output", "-o", type=str, default="leaderboard_localization_report.json"
+    "--input", "-i", type=str, default="data.json", help="Leaderboard data file."
 )
-@click.option("--error-rate", "-e", type=float, default=0.1)
+@click.option(
+    "--output",
+    "-o",
+    type=str,
+    default="leaderboard_localization_data.json",
+    help="Output file.",
+)
+@click.option(
+    "--error-rate", "-e", type=float, default=0.1, help="Max allowable error rate."
+)
 def compute_leaderboard(input: str, output: str, error_rate: float) -> None:
     """Compute localization data for current SWE-bench leaderboard entries."""
     click.echo(f"Computing localization data from leaderboard file {input}...")
@@ -120,7 +141,7 @@ def compute_leaderboard(input: str, output: str, error_rate: float) -> None:
     help="The split containing evaluation instances.",
 )
 @click.option(
-    "--output", "-o", type=str, default="localization.json", help="Output file."
+    "--output", "-o", type=str, default="localization_data.json", help="Output file."
 )
 @click.option(
     "--recursive", "-r", is_flag=True, help="Recursively search for evaluations."
@@ -200,6 +221,22 @@ def compute(
 
     with open(output, "w") as f:
         f.write(report.model_dump_json())
+
+
+@localization.command()
+@click.argument("input", type=str, nargs=-1)
+def systems(input: tuple[str, ...]) -> None:
+    """List the systems in the localization data files in INPUT."""
+    systems: set[str] = set()
+
+    for path in input:
+        with open(path, "r") as f:
+            data = LocalizationData.model_validate_json(f.read())
+
+        systems.update(data.systems.keys())
+
+    for system in systems:
+        click.echo(system)
 
 
 @localization.command()
