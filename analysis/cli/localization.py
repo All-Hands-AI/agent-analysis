@@ -1,10 +1,12 @@
 from pathlib import Path
 import click
+import pandas as pd
 from tqdm import tqdm
 
 from analysis.cli.cli import cli
+from analysis.features.metrics.localization_metrics import LocalizationMetrics
 from analysis.models.patch import Patch
-from analysis.models.localization import Location, LocalizationReport, SystemLocations
+from analysis.models.localization import Location, LocalizationData, SystemLocations
 from analysis.models.swe_bench import Split, Dataset
 from analysis.models.data import Data
 from analysis.models.openhands import EvaluationOutput
@@ -46,7 +48,7 @@ def compute_gold(split: Split, output: str) -> None:
 
     click.echo(f"Writing remaining {len(gold_locations)} instances to {output}...")
 
-    report = LocalizationReport(
+    report = LocalizationData(
         systems=[
             SystemLocations(
                 system=f"swe-bench-gold-{split.value}",
@@ -101,7 +103,7 @@ def compute_leaderboard(input: str, output: str, error_rate: float) -> None:
 
     click.echo(f"Writing {len(systems)} instances to {output}...")
 
-    report = LocalizationReport(systems=systems)
+    report = LocalizationData(systems=systems)
 
     with open(output, "w") as f:
         f.write(report.model_dump_json())
@@ -117,9 +119,15 @@ def compute_leaderboard(input: str, output: str, error_rate: float) -> None:
     callback=lambda _ctx, _, value: Split.from_str(value),
     help="The split containing evaluation instances.",
 )
-@click.option("--output", "-o", type=str, default="localization.json", help="Output file.")
-@click.option("--recursive", "-r", is_flag=True, help="Recursively search for evaluations.")
-@click.option("--error-rate", "-e", type=float, default=0.1, help="Max allowable error rate.")
+@click.option(
+    "--output", "-o", type=str, default="localization.json", help="Output file."
+)
+@click.option(
+    "--recursive", "-r", is_flag=True, help="Recursively search for evaluations."
+)
+@click.option(
+    "--error-rate", "-e", type=float, default=0.1, help="Max allowable error rate."
+)
 def compute(
     input: tuple[str, ...],
     split: Split,
@@ -128,7 +136,7 @@ def compute(
     error_rate: float,
 ) -> None:
     """Compute localization data for OpenHands evaluation directories.
-    
+
     Searches for all trajectory files (output.jsonl) in directories in INPUT.
     """
     # Grab all the system evaluations to be found from the input (recursing if necessary)
@@ -165,7 +173,9 @@ def compute(
         system_locations = SystemLocations(system=system, locations={})
         errors: dict[str, Exception] = {}
 
-        for output in tqdm(outputs, desc=f"Processing patches for {system}", leave=False):
+        for output in tqdm(
+            outputs, desc=f"Processing patches for {system}", leave=False
+        ):
             try:
                 instance = dataset[output.instance_id]
                 patch_source = output.test_result["git_patch"]
@@ -186,7 +196,59 @@ def compute(
 
         systems.append(system_locations)
 
-    report = LocalizationReport(systems=systems)
+    report = LocalizationData(systems=systems)
 
     with open(output, "w") as f:
         f.write(report.model_dump_json())
+
+
+@localization.command()
+@click.argument("input", type=str, nargs=-1)
+@click.option(
+    "--output", "-o", type=str, default="localization.csv", help="Output file."
+)
+@click.option("--ground-truth", "-g", type=str, help="Ground truth system identifier.")
+def report(input: tuple[str, ...], output: str, ground_truth: str) -> None:
+    """Generate a CSV report containing localization metrics for all systems in INPUT."""
+    # Start by loading the data. Load each data blob listed in INPUT and then flatten
+    # the systems into a single dictionary.
+    systems: dict[str, SystemLocations] = {}
+
+    for path in input:
+        with open(path, "r") as f:
+            data = LocalizationData.model_validate_json(f.read())
+
+        for system_locations in data.systems:
+            systems[system_locations.system] = system_locations
+
+    click.echo(f"Found {len(systems)} systems.")
+
+    # Find the ground truth system. This must exist or we can't compute anything else.
+    assert ground_truth in systems, f"Ground truth system {ground_truth} not found."
+    ground_truth_system_locations = systems[ground_truth]
+
+    rows = []
+    for system, system_locations in tqdm(systems.items(), desc="Systems"):
+        if systems == ground_truth:
+            continue
+
+        for instance_id, locations in system_locations.locations.items():
+            metrics = LocalizationMetrics.from_locations(
+                locations, ground_truth_system_locations.locations[instance_id]
+            )
+
+            rows.append(
+                {
+                    "system": system,
+                    "instance_id": instance_id,
+                    "file_match": metrics.file_match,
+                    "function_match": metrics.function_match,
+                    "class_match": metrics.class_match,
+                    "file_precision": metrics.file_precision,
+                    "function_precision": metrics.function_precision,
+                    "class_precision": metrics.class_precision,
+                }
+            )
+
+    df = pd.DataFrame(rows)
+    df.to_csv(output, index=False)

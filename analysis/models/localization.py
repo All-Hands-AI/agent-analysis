@@ -159,5 +159,5 @@ class SystemLocations(BaseModel):
     locations: dict[str, list[Location]]
 
 
-class LocalizationReport(BaseModel):
+class LocalizationData(BaseModel):
     systems: list[SystemLocations]
