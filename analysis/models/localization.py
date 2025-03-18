@@ -154,6 +154,10 @@ class ScopeTracker(ast.NodeVisitor):
         super().generic_visit(node)
 
 
-class LocalizationReport(BaseModel):
+class SystemLocations(BaseModel):
     system: str
     locations: dict[str, list[Location]]
+
+
+class LocalizationReport(BaseModel):
+    systems: list[SystemLocations]
