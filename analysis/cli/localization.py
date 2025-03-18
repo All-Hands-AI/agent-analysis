@@ -23,7 +23,7 @@ def localization(): ...
 )
 @click.option("--output", "-o", type=str, default="gold_localization_report.json")
 def compute_gold(split: Split, output: str) -> None:
-    """Compute the golden localization data."""
+    """Compute localization data for the SWE-bench ground-truth patches."""
     click.echo(f"Computing golden localization data for SWE-bench {split.value}...")
     dataset = Dataset.from_split(split)
     click.echo(f"Found {len(dataset.instances)} instances.")
@@ -66,7 +66,7 @@ def compute_gold(split: Split, output: str) -> None:
 )
 @click.option("--error-rate", "-e", type=float, default=0.1)
 def compute_leaderboard(input: str, output: str, error_rate: float) -> None:
-    """Compute the leaderboard localization data."""
+    """Compute localization data for current SWE-bench leaderboard entries."""
     click.echo(f"Computing localization data from leaderboard file {input}...")
     with open(input) as f:
         data = Data.model_validate_json(f.read())
@@ -115,10 +115,11 @@ def compute_leaderboard(input: str, output: str, error_rate: float) -> None:
     type=Split,
     default="verified",
     callback=lambda _ctx, _, value: Split.from_str(value),
+    help="The split containing evaluation instances.",
 )
-@click.option("--output", "-o", type=str, default="localization.json")
-@click.option("--recursive", "-r", is_flag=True)
-@click.option("--error-rate", "-e", type=float, default=0.1)
+@click.option("--output", "-o", type=str, default="localization.json", help="Output file.")
+@click.option("--recursive", "-r", is_flag=True, help="Recursively search for evaluations.")
+@click.option("--error-rate", "-e", type=float, default=0.1, help="Max allowable error rate.")
 def compute(
     input: tuple[str, ...],
     split: Split,
@@ -126,7 +127,10 @@ def compute(
     recursive: bool,
     error_rate: float,
 ) -> None:
-    """Compute the localization data from OpenHands evaluations."""
+    """Compute localization data for OpenHands evaluation directories.
+    
+    Searches for all trajectory files (output.jsonl) in directories in INPUT.
+    """
     # Grab all the system evaluations to be found from the input (recursing if necessary)
     system_trajectory_paths: dict[str, Path] = {}
 
