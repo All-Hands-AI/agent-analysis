@@ -308,6 +308,16 @@ class Dataset(BaseModel):
         return Dataset(
             split=split, instances=[Instance.model_validate(row) for row in data]
         )
+    
+    def __getitem__(self, instance_id: InstanceID) -> Instance:
+        """
+        Get a specific instance by its identifier.
+        """
+        for instance in self.instances:
+            if instance.instance_id == instance_id:
+                return instance
+
+        raise KeyError(f"Instance {instance_id} not found in dataset.")
 
 
 class Instance(BaseModel, populate_by_name=True):

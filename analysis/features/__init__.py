@@ -95,7 +95,7 @@ def compute_localization_metrics(
             # parsing the underlying source of the patches, which may not actually be
             # well-formed Python.
             try:
-                metrics = LocalizationMetrics.from_patch(gold_patch, generated_patch)
+                metrics = LocalizationMetrics.from_patch(generated_patch, gold_patch)
             except SyntaxError:
                 continue
 
