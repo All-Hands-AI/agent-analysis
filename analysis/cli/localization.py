@@ -15,7 +15,7 @@ from analysis.models.openhands import EvaluationOutput
 @cli.group()
 def localization():
     """Commands for computing localization metrics.
-    
+
     Use these commands to compute localization data and combine them together in a
     report that captures localization metrics like file, function, and class match
     and precision.
@@ -289,3 +289,35 @@ def report(input: tuple[str, ...], output: str, ground_truth: str) -> None:
 
     df = pd.DataFrame(rows)
     df.to_csv(output, index=False)
+
+
+@localization.command()
+@click.argument("input", type=click.Path(exists=True, path_type=Path), nargs=-1)
+@click.argument("output", type=click.Path(writable=True, path_type=Path))
+@click.option(
+    "--union-system", "-u", type=str, default="union", help="Name of the union system."
+)
+def union(input: tuple[Path, ...], output: Path, union_system: str) -> None:
+    """Write the union of all systems in INPUT to OUTPUT.
+    
+    INPUT can be any number of localization data files.
+
+    OUTPUT is a file where the localization data of the union will be written.
+
+    This generates a synthetic system that contains all locations from the provided
+    systems. The synthetic system can be used like any other system.
+    """
+    union_system_locations = SystemLocations(system=union_system, locations={})
+
+    for path in input:
+        with path.open("r") as f:
+            data = LocalizationData.model_validate_json(f.read())
+
+        for system_locations in data.systems:
+            for instance_id, locations in system_locations.locations.items():
+                if instance_id not in union_system_locations.locations:
+                    union_system_locations.locations[instance_id] = []
+                union_system_locations.locations[instance_id].extend(locations)
+
+    with output.open("w") as f:
+        f.write(LocalizationData(systems=[union_system_locations]).model_dump_json())
