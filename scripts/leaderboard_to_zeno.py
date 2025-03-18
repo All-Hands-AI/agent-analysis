@@ -8,6 +8,7 @@ import re
 import pandas as pd
 import click
 import zeno_client
+from pathlib import Path
 
 from analysis.models.swe_bench import Split, Dataset, Evaluation
 
@@ -21,7 +22,25 @@ from analysis.models.swe_bench import Split, Dataset, Evaluation
 )
 @click.option("--zeno-api-key", type=str, envvar="ZENO_API_KEY")
 @click.option("--top-n", type=int, default=None, help="Only include top N systems")
-def main(split: Split, zeno_api_key: str | None, top_n: int | None) -> None:
+@click.option(
+    "--dataset-csv",
+    type=click.Path(readable=True, path_type=Path),
+    multiple=True,
+    help="Path to CSV containing dataset features.",
+)
+@click.option(
+    "--systems-csv",
+    type=click.Path(readable=True, path_type=Path),
+    multiple=True,
+    help="Path to CSV containing system features.",
+)
+def main(
+    split: Split,
+    zeno_api_key: str | None,
+    top_n: int | None,
+    dataset_csv: tuple[Path, ...],
+    systems_csv: tuple[Path, ...]
+) -> None:
     """
     Convert the current leaderboard entries to a Zeno project.
     """
@@ -94,19 +113,30 @@ def main(split: Split, zeno_api_key: str | None, top_n: int | None) -> None:
 
     # Build and upload the dataset with resolution counts, major version changes, and patch info
     dataset = Dataset.from_split(split)
+    dataset_df = pd.DataFrame(
+        [
+            {
+                "instance_id": instance.instance_id,
+                "problem_statement": instance.problem_statement,
+                "repo": instance.repo,
+                "base_commit": instance.base_commit,
+                "times_resolved": resolution_counts.get(instance.instance_id, 0),
+                "has_major_version_change": has_major_version_change(
+                    instance.problem_statement
+                ),
+                "patch_length": get_patch_length(instance),
+                "gold_patch": instance.patch or "No patch available",
+            }
+            for instance in dataset.instances
+        ]
+    )
+
+    for csv_path in dataset_csv:
+        csv = pd.read_csv(csv_path)
+        dataset_df = pd.merge(dataset_df, csv, on="instance_id", how="left")
+
     viz_project.upload_dataset(
-        pd.DataFrame([{
-            'instance_id': instance.instance_id,
-            'problem_statement': instance.problem_statement,
-            'repo': instance.repo,
-            'base_commit': instance.base_commit,
-            'times_resolved': resolution_counts.get(instance.instance_id, 0),
-            'has_major_version_change': has_major_version_change(instance.problem_statement),
-            'patch_length': get_patch_length(instance),
-            'gold_patch': instance.patch or "No patch available",
-        } for instance in dataset.instances]),
-        id_column="instance_id",
-        data_column="problem_statement",
+        dataset_df, id_column="instance_id", data_column="problem_statement"
     )
 
     # Get entries for the split
@@ -151,6 +181,12 @@ def main(split: Split, zeno_api_key: str | None, top_n: int | None) -> None:
                 for prediction in system.predictions
             ]
         )
+
+        # Add any additional system features
+        for csv_path in systems_csv:
+            csv = pd.read_csv(csv_path)
+            csv = csv[csv["system"] == entry]
+            data = pd.merge(data, csv, on="instance_id", how="left")
 
         # Some systems have duplicated entries, which Zeno doesn't like.
         if len(data["instance_id"].unique()) != len(data["instance_id"]):

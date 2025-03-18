@@ -187,35 +187,37 @@ def compute(
 
     for system, path in tqdm(system_trajectory_paths.items(), desc="Systems"):
         with path.open() as f:
-            outputs = [
+            eval_outputs = [
                 EvaluationOutput.model_validate_json(line) for line in f.readlines()
             ]
 
         system_locations = SystemLocations(system=system, locations={})
         errors: dict[str, Exception] = {}
+        did_error: bool = False
 
-        for output in tqdm(
-            outputs, desc=f"Processing patches for {system}", leave=False
+        for eval_output in tqdm(
+            eval_outputs, desc=f"Processing patches for {system}", leave=False
         ):
             try:
-                instance = dataset[output.instance_id]
-                patch_source = output.test_result["git_patch"]
+                instance = dataset[eval_output.instance_id]
+                patch_source = eval_output.test_result["git_patch"]
                 patch = Patch.from_github(
                     instance.repo, instance.base_commit, patch_source
                 )
-                system_locations.locations[output.instance_id] = patch.locations
+                system_locations.locations[eval_output.instance_id] = patch.locations
 
             except Exception as e:
-                errors[output.instance_id] = e
+                errors[eval_output.instance_id] = e
                 continue
 
-            if len(errors) / len(outputs) > error_rate:
+            if len(errors) / len(eval_outputs) > error_rate:
+                did_error = True
                 break
 
-        if len(errors) / len(outputs) > error_rate:
+        if did_error:
             click.echo(f"Too many errors for system {system} ({len(errors)} total).")
-
-        systems.append(system_locations)
+        else:
+            systems.append(system_locations)
 
     report = LocalizationData(systems=systems)
 
@@ -233,7 +235,8 @@ def systems(input: tuple[str, ...]) -> None:
         with open(path, "r") as f:
             data = LocalizationData.model_validate_json(f.read())
 
-        systems.update(data.systems.keys())
+        for system in data.systems:
+            systems.add(system.system)
 
     for system in systems:
         click.echo(system)
@@ -266,26 +269,30 @@ def report(input: tuple[str, ...], output: str, ground_truth: str) -> None:
 
     rows = []
     for system, system_locations in tqdm(systems.items(), desc="Systems"):
-        if systems == ground_truth:
+        if system == ground_truth:
             continue
 
         for instance_id, locations in system_locations.locations.items():
-            metrics = LocalizationMetrics.from_locations(
-                locations, ground_truth_system_locations.locations[instance_id]
-            )
+            try:
+                metrics = LocalizationMetrics.from_locations(
+                    locations, ground_truth_system_locations.locations[instance_id]
+                )
 
-            rows.append(
-                {
-                    "system": system,
-                    "instance_id": instance_id,
-                    "file_match": metrics.file_match,
-                    "function_match": metrics.function_match,
-                    "class_match": metrics.class_match,
-                    "file_precision": metrics.file_precision,
-                    "function_precision": metrics.function_precision,
-                    "class_precision": metrics.class_precision,
-                }
-            )
+                rows.append(
+                    {
+                        "system": system,
+                        "instance_id": instance_id,
+                        "file_match": metrics.file_match,
+                        "function_match": metrics.function_match,
+                        "class_match": metrics.class_match,
+                        "file_precision": metrics.file_precision,
+                        "function_precision": metrics.function_precision,
+                        "class_precision": metrics.class_precision,
+                    }
+                )
+            
+            except KeyError:
+                continue
 
     df = pd.DataFrame(rows)
     df.to_csv(output, index=False)
@@ -302,7 +309,7 @@ def union(input: tuple[Path, ...], output: Path, union_system: str) -> None:
     
     INPUT can be any number of localization data files.
 
-    OUTPUT is a file where the localization data of the union will be written.
+    OUTPUT is a single file where the localization data of the union will be written.
 
     This generates a synthetic system that contains all locations from the provided
     systems. The synthetic system can be used like any other system.
