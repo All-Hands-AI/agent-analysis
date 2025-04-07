@@ -10,6 +10,7 @@ class ResourceUsage(BaseModel):
     cache_reads: int = 0
     cache_writes: int = 0
     response_latency: float = 0.0
+    accumulated_cost: float = 0.0
 
     def __add__(self, other: ResourceUsage) -> ResourceUsage:
         return ResourceUsage(
@@ -18,6 +19,7 @@ class ResourceUsage(BaseModel):
             cache_reads=self.cache_reads + other.cache_reads,
             cache_writes=self.cache_writes + other.cache_writes,
             response_latency=self.response_latency + other.response_latency,
+            accumulated_cost=self.accumulated_cost + other.accumulated_cost,
         )
 
 def per_iteration_resource_usage(output: EvaluationOutput) -> Iterable[ResourceUsage]:
@@ -62,12 +64,18 @@ def per_iteration_resource_usage(output: EvaluationOutput) -> Iterable[ResourceU
                 response_latency = entry['latency']
                 break
 
+        try:
+            accumulated_cost = step['llm_metrics']['accumulated_cost']
+        except KeyError:
+            accumulated_cost = 0.0
+        
         yield ResourceUsage(
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,
             cache_reads=cache_reads,
             cache_writes=cache_writes,
             response_latency=response_latency,
+            accumulated_cost=accumulated_cost,
         )
 
 

@@ -5,6 +5,7 @@ Models representing the data structures produced by OpenHands during the evaluat
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from typing import Any, Callable, Iterable
 import pandas as pd
 from pydantic import BaseModel
@@ -132,7 +133,7 @@ class Evaluation(BaseModel):
             yield output.instance_id
 
     def experiment(self) -> str:
-        return self.filepath[:-6].split("no-hint-")[-1]
+        return Path(self.filepath).name
 
     def resolved(self) -> int:
         return sum(1 for result in self.results if result.test_result.report.resolved)
