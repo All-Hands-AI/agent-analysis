@@ -7,7 +7,7 @@ authors = [
 ]
 license = {text = "MIT"}
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.12,<4.0"
 dependencies = [
     "pydantic (>=2.10.6,<3.0.0)",
     "datasets (>=3.3.2,<4.0.0)",
@@ -18,6 +18,10 @@ dependencies = [
     "unidiff (>=0.7.5,<0.8.0)",
     "scikit-learn (>=1.6.1,<2.0.0)",
     "pytest (>=8.3.5,<9.0.0)",
+    "rich (>=14.0.0,<15.0.0)",
+    "ollama (>=0.4.7,<0.5.0)",
+    "litellm (>=1.65.4.post1,<2.0.0)",
+    "vl-convert-python (>=1.7.0,<2.0.0)",
 ]
 packages = [{include = "analysis"}]
 
