@@ -5,6 +5,7 @@ Models representing the data structures produced by OpenHands during the evaluat
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from typing import Any, Callable, Iterable
 import pandas as pd
 from pydantic import BaseModel
@@ -89,22 +90,22 @@ class SWEBenchResult(BaseModel):
 
 
 class Evaluation(BaseModel):
-    filepath: str
+    filepath: Path
     metadata: EvaluationMetadata
     output: list[EvaluationOutput]
     results: list[SWEBenchResult]
 
     @staticmethod
-    def from_filepath(filepath: str) -> Evaluation:
-        with open(os.path.join(filepath, "metadata.json")) as f:
+    def from_filepath(filepath: Path) -> Evaluation:
+        with (filepath / "metadata.json").open() as f:
             metadata = EvaluationMetadata.model_validate_json(f.read())
 
-        with open(os.path.join(filepath, "output.jsonl")) as f:
+        with (filepath / "output.jsonl").open() as f:
             output = [
                 EvaluationOutput.model_validate_json(line) for line in f.readlines()
             ]
 
-        with open(os.path.join(filepath, "output.swebench_eval.jsonl")) as f:
+        with (filepath / "output.swebench_eval.jsonl").open() as f:
             results = [
                 SWEBenchResult.model_validate_json(line) for line in f.readlines()
             ]
@@ -132,7 +133,7 @@ class Evaluation(BaseModel):
             yield output.instance_id
 
     def experiment(self) -> str:
-        return self.filepath[:-6].split("no-hint-")[-1]
+        return self.filepath.name
 
     def resolved(self) -> int:
         return sum(1 for result in self.results if result.test_result.report.resolved)
