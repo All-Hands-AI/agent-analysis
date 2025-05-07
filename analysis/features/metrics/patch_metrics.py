@@ -11,7 +11,7 @@ class PatchMetrics(Metrics):
     def from_patch(patch: Patch) -> 'PatchMetrics':
         """Create patch metrics from a patch."""
         metrics = PatchMetrics()
-        metrics.number_of_files = len(patch.files)
+        metrics.number_of_files = len(patch.diffs)
         metrics.number_of_lines = len(patch.patch.split("\n"))
         metrics.number_of_added_lines = len([line for line in patch.patch.split("\n") if line.startswith("+")])
         metrics.number_of_removed_lines = len([line for line in patch.patch.split("\n") if line.startswith("-")])
