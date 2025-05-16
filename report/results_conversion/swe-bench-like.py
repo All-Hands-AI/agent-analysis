@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
 
+# This works for lca_ci_build_repair, multi-swe-bench, swt-bench and probably others.
+# It enriches the output.jsonl with the report result for each instance.
+
 import argparse
 import json
 import os
