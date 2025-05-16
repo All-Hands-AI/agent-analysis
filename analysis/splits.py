@@ -103,45 +103,76 @@ def process_trajectories(trajectory_paths: List[str]) -> Dict[str, int]:
     return result, processed_files
 
 
-def create_representative_split(count_resolved: Dict[str, int], split_size: int, split_index: int) -> List[str]:
+def create_representative_split(count_resolved: Dict[str, int], split_size: int, split_index: int, 
+                        used_ids: set = None) -> List[str]:
     """
     Create a representative split of instance IDs that maintains the same distribution of resolution counts.
+    Each split contains unique IDs that don't appear in previous splits.
     
     Args:
         count_resolved: Dictionary with instance_ids as keys and count of resolved=True as values
         split_size: Size of the split
         split_index: Index of the split (used for deterministic sampling)
+        used_ids: Set of instance IDs that have already been used in previous splits
         
     Returns:
         List of instance IDs in the representative split
     """
-    # Group instance IDs by resolution count
+    # Initialize used_ids if not provided
+    if used_ids is None:
+        used_ids = set()
+    
+    # Group instance IDs by resolution count, excluding already used IDs
     grouped_by_count = defaultdict(list)
+    available_count_resolved = {}
+    
     for instance_id, count in count_resolved.items():
-        grouped_by_count[count].append(instance_id)
+        if instance_id not in used_ids:
+            grouped_by_count[count].append(instance_id)
+            available_count_resolved[instance_id] = count
     
-    # Calculate the distribution of resolution counts
+    # Calculate the distribution of resolution counts in the original dataset
     total_instances = len(count_resolved)
-    count_distribution = {count: len(ids) / total_instances for count, ids in grouped_by_count.items()}
+    original_count_distribution = {count: len([id for id in count_resolved if count_resolved[id] == count]) / total_instances 
+                                  for count in set(count_resolved.values())}
     
-    # Calculate how many instances to include from each resolution count
-    instances_per_count = {count: max(1, int(split_size * percentage)) for count, percentage in count_distribution.items()}
+    # Calculate how many instances to include from each resolution count based on original distribution
+    instances_per_count = {count: max(1, int(split_size * percentage)) 
+                          for count, percentage in original_count_distribution.items()}
     
-    # Adjust to ensure we get exactly split_size instances (or all if there are fewer)
+    # Check if we have enough instances in each count category
+    for count in list(instances_per_count.keys()):
+        available = len(grouped_by_count[count])
+        if available < instances_per_count[count]:
+            instances_per_count[count] = available
+    
+    # Adjust to ensure we get as close as possible to split_size instances
     total_selected = sum(instances_per_count.values())
+    
+    # If we don't have enough instances, add more from categories that still have available instances
     if total_selected < split_size:
-        # Add more from the most common resolution counts
-        sorted_counts = sorted(count_distribution.items(), key=lambda x: x[1], reverse=True)
-        for count, _ in sorted_counts:
+        # Sort counts by number of available instances (descending)
+        counts_with_available = [(count, len(grouped_by_count[count]) - instances_per_count[count]) 
+                               for count in instances_per_count 
+                               if len(grouped_by_count[count]) > instances_per_count[count]]
+        
+        counts_with_available.sort(key=lambda x: x[1], reverse=True)
+        
+        for count, _ in counts_with_available:
             if total_selected >= split_size:
                 break
-            instances_per_count[count] += 1
-            total_selected += 1
+            available = len(grouped_by_count[count]) - instances_per_count[count]
+            to_add = min(available, split_size - total_selected)
+            instances_per_count[count] += to_add
+            total_selected += to_add
+    
+    # If we have too many instances, remove from the least common resolution counts
     elif total_selected > split_size:
-        # Remove from the least common resolution counts
-        sorted_counts = sorted(count_distribution.items(), key=lambda x: x[1])
+        # Sort by original distribution (ascending)
+        sorted_counts = sorted(original_count_distribution.items(), key=lambda x: x[1])
+        
         for count, _ in sorted_counts:
-            if total_selected <= split_size or instances_per_count[count] <= 1:
+            if total_selected <= split_size or instances_per_count.get(count, 0) <= 1:
                 break
             instances_per_count[count] -= 1
             total_selected -= 1
@@ -149,6 +180,9 @@ def create_representative_split(count_resolved: Dict[str, int], split_size: int,
     # Select instances from each resolution count
     selected_ids = []
     for count, num_to_select in instances_per_count.items():
+        if num_to_select <= 0:
+            continue
+            
         # Sort for deterministic selection
         sorted_ids = sorted(grouped_by_count[count])
         
@@ -167,6 +201,7 @@ def create_representative_split(count_resolved: Dict[str, int], split_size: int,
 def save_as_toml(count_resolved: Dict[str, int], output_path: str, split_size: int) -> None:
     """
     Save the results as a TOML file with instance IDs grouped by resolution count.
+    Creates representative splits with unique IDs across splits.
     
     Args:
         count_resolved: Dictionary with instance_ids as keys and count of resolved=True as values
@@ -189,7 +224,7 @@ def save_as_toml(count_resolved: Dict[str, int], output_path: str, split_size: i
     # Create TOML content
     toml_content = ""
     
-    # Add distribution information
+    # Add overall distribution information
     distribution_str = ", ".join([f"{count_distribution[count]*100:.1f}% of ids were resolved {count} times" 
                                  for count in sorted(count_distribution.keys())])
     toml_content += f"# {distribution_str}\n\n"
@@ -203,9 +238,16 @@ def save_as_toml(count_resolved: Dict[str, int], output_path: str, split_size: i
     num_splits = (total_instances + split_size - 1) // split_size  # Ceiling division
     num_splits = min(num_splits, 10)  # Limit to 10 splits maximum
     
-    # Create representative splits
+    # Add overall distribution comment before representative splits section
+    toml_content += f"# Parent distribution: {distribution_str}\n\n"
+    
+    # Create representative splits with unique IDs across splits
+    used_ids = set()
     for i in range(num_splits):
-        rep_split = create_representative_split(count_resolved, split_size, i)
+        rep_split = create_representative_split(count_resolved, split_size, i, used_ids)
+        
+        # Update used_ids with the IDs in this split
+        used_ids.update(rep_split)
         
         # Calculate the distribution in this split
         split_counts = defaultdict(int)
@@ -218,8 +260,10 @@ def save_as_toml(count_resolved: Dict[str, int], output_path: str, split_size: i
         split_distribution_str = ", ".join([f"{split_distribution[count]*100:.1f}% of ids were resolved {count} times" 
                                           for count in sorted(split_distribution.keys())])
         
-        toml_content += f"# representative split with {split_distribution_str}\n"
-        toml_content += f"# split of length {len(rep_split)}\n"
+        # Add parent distribution for comparison
+        toml_content += f"# Parent distribution: {distribution_str}\n"
+        toml_content += f"# Split {i} distribution: {split_distribution_str}\n"
+        toml_content += f"# Split of length {len(rep_split)}\n"
         toml_content += f"rep{i}_selected_ids = {rep_split}\n\n"
     
     # Write to file
