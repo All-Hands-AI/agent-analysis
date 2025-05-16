@@ -3,6 +3,7 @@
 import argparse
 import json
 import os
+import toml
 from collections import defaultdict
 from typing import Dict, List, Any, Optional
 
@@ -19,7 +20,7 @@ def parse_args():
     parser.add_argument(
         "--split", 
         required=True,
-        help="Output path for the JSON file containing instance resolution counts"
+        help="Output path for the TOML file containing instance IDs grouped by resolution counts"
     )
     return parser.parse_args()
 
@@ -95,15 +96,42 @@ def process_trajectories(trajectory_paths: List[str]) -> Dict[str, int]:
     return result, processed_files
 
 
+def save_as_toml(count_resolved: Dict[str, int], output_path: str) -> None:
+    """
+    Save the results as a TOML file with instance IDs grouped by resolution count.
+    
+    Args:
+        count_resolved: Dictionary with instance_ids as keys and count of resolved=True as values
+        output_path: Path to save the TOML file
+    """
+    # Group instance IDs by resolution count
+    grouped_by_count = defaultdict(list)
+    for instance_id, count in count_resolved.items():
+        grouped_by_count[count].append(instance_id)
+    
+    # Sort instance IDs within each group for consistency
+    for count in grouped_by_count:
+        grouped_by_count[count].sort()
+    
+    # Create TOML content
+    toml_content = ""
+    for count in sorted(grouped_by_count.keys()):
+        toml_content += f"# resolved {count} times\n"
+        toml_content += f"r{count}_selected_ids = {grouped_by_count[count]}\n\n"
+    
+    # Write to file
+    with open(output_path, 'w') as f:
+        f.write(toml_content)
+
+
 def main():
     args = parse_args()
     
     # Process trajectories and count resolved instances
     count_resolved, processed_files = process_trajectories(args.trajectories)
     
-    # Save the results to the specified output path
-    with open(args.split, 'w') as f:
-        json.dump(count_resolved, f, indent=2)
+    # Save the results to the specified output path as TOML
+    save_as_toml(count_resolved, args.split)
     
     print(f"Processed {len(args.trajectories)} trajectory directories/files")
     print(f"Successfully read {processed_files} JSONL files")
