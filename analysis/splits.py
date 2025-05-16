@@ -35,6 +35,7 @@ def process_trajectories(trajectory_paths: List[str]) -> Dict[str, int]:
         Dictionary with instance_ids as keys and count of resolved=True as values
     """
     count_resolved = defaultdict(int)
+    all_instance_ids = set()  # Track all instance IDs encountered
     processed_files = 0
     
     for path in trajectory_paths:
@@ -68,6 +69,9 @@ def process_trajectories(trajectory_paths: List[str]) -> Dict[str, int]:
                             # Skip if we still don't have an instance_id
                             if not instance_id:
                                 continue
+                            
+                            # Add to the set of all instance IDs
+                            all_instance_ids.add(instance_id)
                                 
                             # Check if report.resolved is True
                             report = data.get('report')
@@ -81,8 +85,14 @@ def process_trajectories(trajectory_paths: List[str]) -> Dict[str, int]:
             except FileNotFoundError:
                 print(f"Warning: File not found: {file_path}")
                 continue
+    
+    # Ensure all encountered instance IDs are in the dictionary (even with 0 count)
+    result = dict(count_resolved)
+    for instance_id in all_instance_ids:
+        if instance_id not in result:
+            result[instance_id] = 0
             
-    return dict(count_resolved), processed_files
+    return result, processed_files
 
 
 def main():
