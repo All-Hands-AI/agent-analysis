@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 import toml
+import numpy as np
 from collections import defaultdict
 from typing import Dict, List, Any, Optional
 
@@ -21,6 +22,12 @@ def parse_args():
         "--split", 
         required=True,
         help="Output path for the TOML file containing instance IDs grouped by resolution counts"
+    )
+    parser.add_argument(
+        "--split-size",
+        type=int,
+        default=50,
+        help="Size of each representative split (default: 50)"
     )
     return parser.parse_args()
 
@@ -96,13 +103,75 @@ def process_trajectories(trajectory_paths: List[str]) -> Dict[str, int]:
     return result, processed_files
 
 
-def save_as_toml(count_resolved: Dict[str, int], output_path: str) -> None:
+def create_representative_split(count_resolved: Dict[str, int], split_size: int, split_index: int) -> List[str]:
+    """
+    Create a representative split of instance IDs that maintains the same distribution of resolution counts.
+    
+    Args:
+        count_resolved: Dictionary with instance_ids as keys and count of resolved=True as values
+        split_size: Size of the split
+        split_index: Index of the split (used for deterministic sampling)
+        
+    Returns:
+        List of instance IDs in the representative split
+    """
+    # Group instance IDs by resolution count
+    grouped_by_count = defaultdict(list)
+    for instance_id, count in count_resolved.items():
+        grouped_by_count[count].append(instance_id)
+    
+    # Calculate the distribution of resolution counts
+    total_instances = len(count_resolved)
+    count_distribution = {count: len(ids) / total_instances for count, ids in grouped_by_count.items()}
+    
+    # Calculate how many instances to include from each resolution count
+    instances_per_count = {count: max(1, int(split_size * percentage)) for count, percentage in count_distribution.items()}
+    
+    # Adjust to ensure we get exactly split_size instances (or all if there are fewer)
+    total_selected = sum(instances_per_count.values())
+    if total_selected < split_size:
+        # Add more from the most common resolution counts
+        sorted_counts = sorted(count_distribution.items(), key=lambda x: x[1], reverse=True)
+        for count, _ in sorted_counts:
+            if total_selected >= split_size:
+                break
+            instances_per_count[count] += 1
+            total_selected += 1
+    elif total_selected > split_size:
+        # Remove from the least common resolution counts
+        sorted_counts = sorted(count_distribution.items(), key=lambda x: x[1])
+        for count, _ in sorted_counts:
+            if total_selected <= split_size or instances_per_count[count] <= 1:
+                break
+            instances_per_count[count] -= 1
+            total_selected -= 1
+    
+    # Select instances from each resolution count
+    selected_ids = []
+    for count, num_to_select in instances_per_count.items():
+        # Sort for deterministic selection
+        sorted_ids = sorted(grouped_by_count[count])
+        
+        # Use a deterministic sampling based on split_index
+        if len(sorted_ids) <= num_to_select:
+            selected_ids.extend(sorted_ids)
+        else:
+            # Use a deterministic sampling method
+            np.random.seed(42 + split_index)  # Fixed seed + split_index for deterministic but different splits
+            selected_indices = np.random.choice(len(sorted_ids), num_to_select, replace=False)
+            selected_ids.extend([sorted_ids[i] for i in selected_indices])
+    
+    return sorted(selected_ids)
+
+
+def save_as_toml(count_resolved: Dict[str, int], output_path: str, split_size: int) -> None:
     """
     Save the results as a TOML file with instance IDs grouped by resolution count.
     
     Args:
         count_resolved: Dictionary with instance_ids as keys and count of resolved=True as values
         output_path: Path to save the TOML file
+        split_size: Size of each representative split
     """
     # Group instance IDs by resolution count
     grouped_by_count = defaultdict(list)
@@ -113,11 +182,45 @@ def save_as_toml(count_resolved: Dict[str, int], output_path: str) -> None:
     for count in grouped_by_count:
         grouped_by_count[count].sort()
     
+    # Calculate the distribution of resolution counts
+    total_instances = len(count_resolved)
+    count_distribution = {count: len(ids) / total_instances for count, ids in grouped_by_count.items()}
+    
     # Create TOML content
     toml_content = ""
+    
+    # Add distribution information
+    distribution_str = ", ".join([f"{count_distribution[count]*100:.1f}% of ids were resolved {count} times" 
+                                 for count in sorted(count_distribution.keys())])
+    toml_content += f"# {distribution_str}\n\n"
+    
+    # Add resolution count groups
     for count in sorted(grouped_by_count.keys()):
         toml_content += f"# resolved {count} times\n"
         toml_content += f"r{count}_selected_ids = {grouped_by_count[count]}\n\n"
+    
+    # Calculate number of representative splits
+    num_splits = (total_instances + split_size - 1) // split_size  # Ceiling division
+    num_splits = min(num_splits, 10)  # Limit to 10 splits maximum
+    
+    # Create representative splits
+    for i in range(num_splits):
+        rep_split = create_representative_split(count_resolved, split_size, i)
+        
+        # Calculate the distribution in this split
+        split_counts = defaultdict(int)
+        for instance_id in rep_split:
+            split_counts[count_resolved[instance_id]] += 1
+        
+        split_distribution = {count: split_counts[count] / len(rep_split) if len(rep_split) > 0 else 0 
+                             for count in sorted(count_distribution.keys())}
+        
+        split_distribution_str = ", ".join([f"{split_distribution[count]*100:.1f}% of ids were resolved {count} times" 
+                                          for count in sorted(split_distribution.keys())])
+        
+        toml_content += f"# representative split with {split_distribution_str}\n"
+        toml_content += f"# split of length {len(rep_split)}\n"
+        toml_content += f"rep{i}_selected_ids = {rep_split}\n\n"
     
     # Write to file
     with open(output_path, 'w') as f:
@@ -131,11 +234,12 @@ def main():
     count_resolved, processed_files = process_trajectories(args.trajectories)
     
     # Save the results to the specified output path as TOML
-    save_as_toml(count_resolved, args.split)
+    save_as_toml(count_resolved, args.split, args.split_size)
     
     print(f"Processed {len(args.trajectories)} trajectory directories/files")
     print(f"Successfully read {processed_files} JSONL files")
     print(f"Found {len(count_resolved)} unique instance IDs")
+    print(f"Created representative splits of size {args.split_size}")
     print(f"Results saved to {args.split}")
 
 
