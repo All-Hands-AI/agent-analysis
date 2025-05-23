@@ -34,6 +34,11 @@ def process_trajectories(trajectories_path: str) -> List[Dict[str, Any]]:
             
             # Set resolved status
             trajectory["report"]["resolved"] = passed
+            # TODO: set empty_generation, failed_apply_patch, test_timeout
+            trajectory["report"]["empty_generation"] = False
+            trajectory["report"]["failed_apply_patch"] = False
+            trajectory["report"]["error_eval"] = False
+            trajectory["report"]["test_timeout"] = False
             
             processed_trajectories.append(trajectory)
     

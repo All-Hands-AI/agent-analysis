@@ -27,8 +27,9 @@ def load_results(results_path: str) -> Dict[str, List[Dict[str, Any]]]:
 def process_trajectories(trajectories_path: str, results: Dict[str, List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
     """Process trajectories and add report information."""
     # Extract instance IDs from resolved and unresolved instances
-    resolved_ids = {instance["id"] for instance in results.get("resolved_instances", [])}
-    unresolved_ids = {instance["id"] for instance in results.get("unresolved_instances", [])}
+    resolved_ids = {str(instance["id"]) for instance in results.get("resolved_instances", [])}
+    print(f"Resolved {resolved_ids}")
+    unresolved_ids = {str(instance["id"]) for instance in results.get("unresolved_instances", [])}
     
     processed_trajectories = []
     
@@ -47,6 +48,10 @@ def process_trajectories(trajectories_path: str, results: Dict[str, List[Dict[st
             
             # Set error_eval status (false if in either resolved or unresolved)
             trajectory["report"]["error_eval"] = not (instance_id in resolved_ids or instance_id in unresolved_ids)
+            # TODO: set empty_generation, failed_apply_patch, test_timeout
+            trajectory["report"]["empty_generation"] = False
+            trajectory["report"]["failed_apply_patch"] = False
+            trajectory["report"]["test_timeout"] = False
             
             processed_trajectories.append(trajectory)
     

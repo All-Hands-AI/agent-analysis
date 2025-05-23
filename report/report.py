@@ -3,7 +3,7 @@
 Count the number of resolved instances and calculate average accumulated cost in an evaluation file.
 
 Usage:
-    python count_resolved.py <jsonl_file>
+    python repott.py <jsonl_file>
 
 This script analyzes a JSONL file containing SWEBench evaluation results and reports:
 1. The number and percentage of resolved instances
