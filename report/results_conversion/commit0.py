@@ -34,10 +34,10 @@ def process_trajectories(trajectories_path: str) -> List[Dict[str, Any]]:
             
             # Set resolved status
             trajectory["report"]["resolved"] = passed
-            trajectory["report"]["empty_generation"] = false
-            trajectory["report"]["error_val"] = false
-            trajectory["report"]["test_timeout"] = false
-            trajectory["report"]["failed_apply_patch"] = false
+            trajectory["report"]["empty_generation"] = False
+            trajectory["report"]["error_val"] = False
+            trajectory["report"]["test_timeout"] = False
+            trajectory["report"]["failed_apply_patch"] = False
             
             processed_trajectories.append(trajectory)
     
